@@ -169,3 +169,53 @@ jobs:
             # List what files were created
             ls -la ./*.excalidraw 2>/dev/null || echo "No .excalidraw files found"
           fi
+
+      - name: Convert diagram to SVG
+        if: always()
+        run: |
+          if [ -f ci_test_diagram.excalidraw ]; then
+            npx excalidraw-to-svg ci_test_diagram.excalidraw ./output
+            mv ./output/ci_test_diagram.svg . 2>/dev/null || true
+            echo "SVG conversion complete"
+          fi
+
+      - name: Upload diagram artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excalidraw-diagram
+          path: |
+            ci_test_diagram.excalidraw
+            ci_test_diagram.svg
+          if-no-files-found: ignore
+
+      - name: Add diagram to step summary
+        if: always()
+        run: |
+          echo "## 📊 Generated Excalidraw Diagram" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f ci_test_diagram.excalidraw ]; then
+            ELEMENTS=$(python -c "import json; d=json.load(open('ci_test_diagram.excalidraw')); print(len(d.get('elements', [])))")
+            echo "✅ **Diagram created successfully** with $ELEMENTS elements" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            if [ -f ci_test_diagram.svg ]; then
+              echo "### Preview" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              # Embed SVG directly in summary
+              echo '<details><summary>Click to view diagram</summary>' >> $GITHUB_STEP_SUMMARY
+              echo '' >> $GITHUB_STEP_SUMMARY
+              cat ci_test_diagram.svg >> $GITHUB_STEP_SUMMARY
+              echo '' >> $GITHUB_STEP_SUMMARY
+              echo '</details>' >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            echo "### Downloads" >> $GITHUB_STEP_SUMMARY
+            echo "- Download the artifacts to view/edit in [Excalidraw](https://excalidraw.com)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ **No diagram was generated**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The skill may not have been triggered or an error occurred." >> $GITHUB_STEP_SUMMARY
+          fi
