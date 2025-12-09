@@ -174,9 +174,12 @@ jobs:
         if: always()
         run: |
           if [ -f ci_test_diagram.excalidraw ]; then
+            # Install excalidraw-to-svg and its dependencies properly
+            npm install excalidraw-to-svg
             npx excalidraw-to-svg ci_test_diagram.excalidraw ./output
             mv ./output/ci_test_diagram.svg . 2>/dev/null || true
             echo "SVG conversion complete"
+            ls -la *.svg 2>/dev/null || echo "No SVG files created"
           fi
 
       - name: Upload diagram artifacts
