@@ -179,6 +179,8 @@ jobs:
             sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
             # Install excalidraw-to-svg with canvas support
             npm install excalidraw-to-svg canvas
+            # Create output directory and convert
+            mkdir -p ./output
             npx excalidraw-to-svg ci_test_diagram.excalidraw ./output
             mv ./output/ci_test_diagram.svg . 2>/dev/null || true
             echo "SVG conversion complete"
