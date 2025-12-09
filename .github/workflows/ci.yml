@@ -174,8 +174,11 @@ jobs:
         if: always()
         run: |
           if [ -f ci_test_diagram.excalidraw ]; then
-            # Install excalidraw-to-svg and its dependencies properly
-            npm install excalidraw-to-svg
+            # Install system dependencies for canvas npm package
+            sudo apt-get update
+            sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
+            # Install excalidraw-to-svg with canvas support
+            npm install excalidraw-to-svg canvas
             npx excalidraw-to-svg ci_test_diagram.excalidraw ./output
             mv ./output/ci_test_diagram.svg . 2>/dev/null || true
             echo "SVG conversion complete"
