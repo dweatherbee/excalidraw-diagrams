@@ -20,7 +20,7 @@ import random
 import math
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional, Literal, Any
+from typing import Optional, Literal, Any, Union, List
 from pathlib import Path
 
 
@@ -287,7 +287,7 @@ def arrow(
     end_head: str = "arrow",
     label: Optional[str] = None,
     **kwargs
-) -> list[dict]:
+) -> List[dict]:
     """Create an arrow element, optionally with a label. Returns list of elements."""
     stroke = COLORS.get(color, color)
 
@@ -399,10 +399,10 @@ class Diagram:
     """High-level API for creating Excalidraw diagrams."""
 
     def __init__(self, background: str = "#ffffff"):
-        self.elements: list[dict] = []
+        self.elements: List[dict] = []
         self.background = background
 
-    def add(self, *elements: dict | list[dict]) -> None:
+    def add(self, *elements: Union[dict, List[dict]]) -> None:
         """Add raw elements to the diagram."""
         for elem in elements:
             if isinstance(elem, list):

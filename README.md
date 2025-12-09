@@ -28,7 +28,19 @@ git submodule add https://github.com/robtaylor/excalidraw-diagrams .claude/skill
 
 Commit to your repository - team members will automatically get the skill when they pull.
 
-### Option 3: Update an Existing Installation
+### Option 3: Claude.ai Web Interface
+
+For use with Claude.ai (web interface), download the capability zip from the [latest release](https://github.com/robtaylor/excalidraw-diagrams/releases/latest) and upload it at [claude.ai/settings/capabilities](https://claude.ai/settings/capabilities).
+
+Or build it yourself:
+```bash
+git clone https://github.com/robtaylor/excalidraw-diagrams
+cd excalidraw-diagrams
+python scripts/create_capability_zip.py
+# Upload excalidraw-diagrams-capability.zip to Claude.ai
+```
+
+### Option 4: Update an Existing Installation
 
 ```bash
 cd ~/.claude/skills/excalidraw-diagrams && git pull

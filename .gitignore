@@ -3,3 +3,4 @@ __pycache__/
 *.pyo
 *.excalidraw
 .DS_Store
+*.zip
