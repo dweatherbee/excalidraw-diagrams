@@ -140,6 +140,22 @@ Each color has a matching light background for filled shapes.
 2. **VS Code** - Install the [Excalidraw extension](https://marketplace.visualstudio.com/items?itemName=pomdtr.excalidraw-editor)
 3. **Obsidian** - Use the [Excalidraw plugin](https://github.com/zsviczian/obsidian-excalidraw-plugin)
 
+## Development
+
+### Running Tests
+
+Unit tests (no API key required):
+```bash
+python tests/test_generator.py
+```
+
+API skill upload test (requires Anthropic API key):
+```bash
+ANTHROPIC_API_KEY=sk-... python tests/test_api_skill.py
+```
+
+This tests the skill via the Claude API Skills endpoint - uploading, using with the Messages API, and cleanup.
+
 ## License
 
 MIT License - See [LICENSE](LICENSE) for details.
