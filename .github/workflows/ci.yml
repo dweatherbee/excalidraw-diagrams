@@ -141,10 +141,11 @@ jobs:
           cp -r . ~/.claude/skills/excalidraw-diagrams
 
       - name: Test skill with Claude Code
-        uses: anthropics/claude-code-action@beta
+        uses: robtaylor/claude-code-action@main
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          mode: agent
           direct_prompt: |
             I want to verify the excalidraw-diagrams skill is working correctly.
 
