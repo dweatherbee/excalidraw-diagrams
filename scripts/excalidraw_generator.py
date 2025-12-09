@@ -558,7 +558,7 @@ class Diagram:
         """Export diagram as JSON string."""
         return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
 
-    def save(self, path: str | Path) -> Path:
+    def save(self, path: Union[str, Path]) -> Path:
         """Save diagram to file."""
         path = Path(path)
         if not path.suffix:
