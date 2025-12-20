@@ -11,6 +11,7 @@ This skill generates Excalidraw diagrams programmatically using Python. Instead 
 - Opened at https://excalidraw.com (drag & drop the file)
 - Edited in VS Code with the Excalidraw extension
 - Embedded in documentation
+- **Exported to SVG/PNG** for embedding in Google Docs, presentations, etc.
 
 ## Quick Start
 
@@ -314,6 +315,48 @@ After generating a `.excalidraw` file:
 1. **Excalidraw.com**: Go to https://excalidraw.com and drag the file onto the canvas
 2. **VS Code**: Install the "Excalidraw" extension, then open the file
 3. **CLI**: Use `open filename.excalidraw` on macOS to open with default app
+
+---
+
+## Exporting to SVG/PNG
+
+To embed diagrams in Google Docs, presentations, or other documents, export them to SVG or PNG.
+
+### Using the Export Script
+
+```bash
+# Export to SVG
+python3 ~/.claude/skills/excalidraw-diagrams/scripts/export_diagram.py diagram.excalidraw diagram.svg
+
+# Export to PNG (requires rsvg-convert, ImageMagick, or Inkscape)
+python3 ~/.claude/skills/excalidraw-diagrams/scripts/export_diagram.py diagram.excalidraw diagram.png
+```
+
+### Using npx Directly
+
+```bash
+# Export to SVG using excalidraw_export
+npx excalidraw_export diagram.excalidraw diagram.svg
+```
+
+### In Python Code
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.claude/skills/excalidraw-diagrams/scripts"))
+from export_diagram import export_to_svg, export_to_png
+
+# Export to SVG
+svg_path = export_to_svg("diagram.excalidraw", "output.svg")
+
+# Export to PNG (2x scale for retina)
+png_path = export_to_png("diagram.excalidraw", "output.png", scale=2.0)
+```
+
+### Requirements
+
+- **Node.js/npm**: Required for `npx excalidraw_export`
+- **For PNG**: One of: `rsvg-convert` (librsvg), `convert` (ImageMagick), or `inkscape`
 
 ---
 
