@@ -316,8 +316,17 @@ def arrow(
     # Add label if provided - always black for readability
     if label:
         mid_x = start_x + dx / 2
-        mid_y = start_y + dy / 2 - 20  # offset above the line
-        label_elem = text(mid_x, mid_y, label, font_size=16, color="black")
+        # Position label perpendicular to arrow, offset by 25px
+        # For more horizontal arrows, offset vertically
+        # For more vertical arrows, offset horizontally
+        if abs(dx) > abs(dy):
+            # More horizontal - offset above
+            mid_y = start_y + dy / 2 - 25
+        else:
+            # More vertical - offset to the right
+            mid_x = start_x + dx / 2 + 15
+            mid_y = start_y + dy / 2
+        label_elem = text(mid_x, mid_y, label, font_size=14, color="black")
         elements.append(label_elem)
 
     return elements
@@ -429,23 +438,36 @@ class Diagram:
         }
         shape_elem = shape_funcs[shape](x, y, width, height, color=color)
 
-        # Add centered text - always black for readability
-        text_x = x + width / 2 - len(label) * font_size * 0.3
-        text_y = y + height / 2 - font_size / 2
-        text_elem = text(text_x, text_y, label, font_size=font_size, color="black")
+        # Add shape first (background)
+        self.elements.append(shape_elem)
 
-        # Link text to shape
-        shape_elem["boundElements"] = [{"id": text_elem["id"], "type": "text"}]
-        text_elem["containerId"] = shape_elem["id"]
-        text_elem["textAlign"] = "center"
-        text_elem["verticalAlign"] = "middle"
-        # Position text at shape center
-        text_elem["x"] = x
-        text_elem["y"] = y
-        text_elem["width"] = width
-        text_elem["height"] = height
+        # Add centered text as standalone element (not bound to shape)
+        # This avoids rendering issues with bound text
+        lines = label.split("\n")
+        line_height = font_size * 1.3
+        total_text_height = len(lines) * line_height
 
-        self.elements.extend([shape_elem, text_elem])
+        # Calculate center position for text block
+        start_y = y + (height - total_text_height) / 2 + font_size * 0.3
+
+        for i, line in enumerate(lines):
+            if not line.strip():
+                continue
+            # Center each line horizontally within the box
+            line_y = start_y + i * line_height
+            text_elem = text(
+                x + width / 2,  # center x
+                line_y,
+                line,
+                font_size=font_size,
+                color="black",
+                align="center"
+            )
+            # Adjust text width to fit in box
+            text_elem["width"] = width
+            text_elem["textAlign"] = "center"
+            self.elements.append(text_elem)
+
         return Element(shape_elem, x, y, width, height)
 
     def text_box(
