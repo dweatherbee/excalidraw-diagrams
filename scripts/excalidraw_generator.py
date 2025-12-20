@@ -313,11 +313,11 @@ def arrow(
 
     elements = [elem]
 
-    # Add label if provided
+    # Add label if provided - always black for readability
     if label:
         mid_x = start_x + dx / 2
         mid_y = start_y + dy / 2 - 20  # offset above the line
-        label_elem = text(mid_x, mid_y, label, font_size=16, color=color)
+        label_elem = text(mid_x, mid_y, label, font_size=16, color="black")
         elements.append(label_elem)
 
     return elements
@@ -429,10 +429,10 @@ class Diagram:
         }
         shape_elem = shape_funcs[shape](x, y, width, height, color=color)
 
-        # Add centered text
+        # Add centered text - always black for readability
         text_x = x + width / 2 - len(label) * font_size * 0.3
         text_y = y + height / 2 - font_size / 2
-        text_elem = text(text_x, text_y, label, font_size=font_size, color=color)
+        text_elem = text(text_x, text_y, label, font_size=font_size, color="black")
 
         # Link text to shape
         shape_elem["boundElements"] = [{"id": text_elem["id"], "type": "text"}]
