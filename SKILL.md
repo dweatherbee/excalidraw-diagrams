@@ -376,3 +376,198 @@ png_path = export_to_png("diagram.excalidraw", "output.png", scale=2.0)
    - **Grid**: Combine both for complex diagrams
 
 6. **After generation**: Open in Excalidraw to fine-tune positions and add hand-drawn elements.
+
+---
+
+## Google Drive Integration
+
+Save diagrams directly to Google Drive for cloud storage and human editing via Excalidraw web.
+
+### Quick Upload
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.claude/skills/excalidraw-diagrams/scripts"))
+from excalidraw_generator import Diagram
+
+d = Diagram()
+d.box(100, 100, "Cloud Diagram", color="blue")
+
+# Save directly to Google Drive
+result = d.save_to_drive("my_diagram.excalidraw", share_public=True)
+
+print(f"View in Drive: {result['file']['web_view_link']}")
+print(f"Edit in Excalidraw: {result['edit_url']}")
+```
+
+### save_to_drive() Method
+
+**`save_to_drive(name=None, folder_id=None, share_public=False, local_path=None)`**
+
+Save diagram directly to Google Drive.
+
+- `name`: Filename in Drive (default: "diagram.excalidraw")
+- `folder_id`: Drive folder ID to upload to (default: root)
+- `share_public`: If True, make file publicly accessible
+- `local_path`: Also save locally to this path (optional)
+
+Returns a dict with:
+- `file.id`: Google Drive file ID
+- `file.web_view_link`: Link to view in Drive
+- `edit_url`: Link to open in Excalidraw.com
+- `share`: Sharing info (if share_public=True)
+
+### Using drive_helper Directly
+
+For more control, use the drive_helper module:
+
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.claude/skills/excalidraw-diagrams/scripts"))
+from excalidraw_generator import Diagram
+from drive_helper import upload_to_drive, share_file, search_excalidraw_files
+
+# Create and save locally first
+d = Diagram()
+d.box(100, 100, "Hello")
+d.save("hello.excalidraw")
+
+# Upload to specific folder
+result = upload_to_drive("hello.excalidraw", folder_id="YOUR_FOLDER_ID")
+
+# Share with specific user
+share_file(result["file"]["id"], email="user@example.com", role="writer")
+
+# Find all excalidraw files in Drive
+files = search_excalidraw_files()
+```
+
+### DriveUploader Class
+
+For batch uploads or folder organization:
+
+```python
+from drive_helper import DriveUploader
+
+uploader = DriveUploader(folder_id="YOUR_FOLDER_ID")
+
+result = uploader.upload(
+    "diagram.excalidraw",
+    name="My Diagram",
+    share_public=True
+)
+```
+
+### Human Editing Workflow
+
+After saving to Drive, users can edit diagrams in two ways:
+
+1. **Excalidraw.com** (via edit_url):
+   - Open `edit_url` in browser
+   - Excalidraw loads the file from Drive
+   - Edit and save changes
+
+2. **gdrive.excalidraw.com**:
+   - Go to https://gdrive.excalidraw.com
+   - Connect Google Drive
+   - Open and edit files directly
+
+### Round-Trip Workflow
+
+Create with Claude → Human edits → Claude updates:
+
+```python
+from drive_helper import download_from_drive, update_in_drive
+
+# Download human-edited version
+download_from_drive(file_id, "updated_diagram.excalidraw")
+
+# Make programmatic changes
+d = Diagram()
+# ... load and modify ...
+d.save("updated_diagram.excalidraw")
+
+# Upload changes back
+update_in_drive(file_id, "updated_diagram.excalidraw")
+```
+
+### Complete Workflow: Diagram to Google Doc
+
+Create a diagram, export to PNG, and embed in a Google Doc:
+
+```python
+import sys, os, subprocess, json
+sys.path.insert(0, os.path.expanduser("~/.claude/skills/excalidraw-diagrams/scripts"))
+from excalidraw_generator import ArchitectureDiagram
+
+# 1. Create the diagram
+arch = ArchitectureDiagram()
+arch.user("user", "User", x=50, y=150)
+arch.component("frontend", "Frontend", x=200, y=130, color="blue")
+arch.service("api", "API Gateway", x=400, y=130, color="violet")
+arch.database("db", "Database", x=600, y=150, color="green")
+arch.connect("user", "frontend", "HTTPS")
+arch.connect("frontend", "api", "REST")
+arch.connect("api", "db", "SQL")
+
+# 2. Save locally and to Drive
+arch.save("/tmp/architecture.excalidraw")
+drive_result = arch.save_to_drive("architecture.excalidraw", share_public=True)
+file_id = drive_result["file"]["id"]
+edit_url = drive_result["edit_url"]
+
+# 3. Export to PNG
+subprocess.run([
+    "python3", os.path.expanduser("~/.claude/skills/excalidraw-diagrams/scripts/export_diagram.py"),
+    "/tmp/architecture.excalidraw", "/tmp/architecture.png"
+])
+
+# 4. Upload PNG to Drive and share
+drive_script = os.path.expanduser("~/.claude/skills/google-docs/scripts/drive_manager.rb")
+png_result = subprocess.run(
+    ["ruby", drive_script, "upload", "--file", "/tmp/architecture.png"],
+    capture_output=True, text=True
+)
+png_data = json.loads(png_result.stdout)
+png_id = png_data["file"]["id"]
+
+# Share the PNG publicly
+subprocess.run(["ruby", drive_script, "share", "--file-id", png_id, "--type", "anyone", "--role", "reader"])
+png_url = f"https://drive.google.com/uc?id={png_id}&export=download"
+
+# 5. Create Google Doc with embedded image
+docs_script = os.path.expanduser("~/.claude/skills/google-docs/scripts/docs_manager.rb")
+
+# Create document
+doc_input = json.dumps({"title": "Architecture Overview", "content": "System Architecture\\n\\n"})
+doc_result = subprocess.run(
+    ["ruby", docs_script, "create"],
+    input=doc_input, capture_output=True, text=True
+)
+doc_data = json.loads(doc_result.stdout)
+doc_id = doc_data["document_id"]
+
+# Insert image (Note: SVG not supported - must use PNG)
+# Width 468pt fits standard Google Doc margins; height auto-scales
+img_input = json.dumps({
+    "document_id": doc_id,
+    "image_url": png_url,
+    "index": 25,
+    "width": 468  # Page width in points (fits default margins)
+})
+subprocess.run(["ruby", docs_script, "insert-image"], input=img_input, capture_output=True, text=True)
+
+# Append edit link
+link_input = json.dumps({"document_id": doc_id, "text": f"\\n\\nEdit diagram: {edit_url}"})
+subprocess.run(["ruby", docs_script, "append"], input=link_input, capture_output=True, text=True)
+
+print(f"Document: https://docs.google.com/document/d/{doc_id}/edit")
+print(f"Edit diagram: {edit_url}")
+```
+
+**Important**: Google Docs does not support SVG images. Always export to PNG for embedding.
+
+### Prerequisites
+
+- Google Docs skill must be installed (provides OAuth and drive_manager.rb)
+- First run will prompt for Google authorization if not already done

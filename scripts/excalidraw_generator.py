@@ -601,6 +601,74 @@ class Diagram:
         path.write_text(self.to_json())
         return path
 
+    def save_to_drive(self, name: str = None, folder_id: str = None,
+                      share_public: bool = False, local_path: str = None) -> dict:
+        """
+        Save diagram to Google Drive.
+
+        Args:
+            name: Name for the file in Drive (defaults to 'diagram.excalidraw')
+            folder_id: Optional Drive folder ID to upload to
+            share_public: If True, make the file publicly accessible
+            local_path: Optional local path to save first (temp file used if None)
+
+        Returns:
+            dict with status, file info, and edit_url for Excalidraw web
+
+        Example:
+            d = Diagram()
+            d.box(100, 100, "Hello")
+            result = d.save_to_drive("my_diagram.excalidraw", share_public=True)
+            print(result["edit_url"])  # Opens in Excalidraw web
+        """
+        import tempfile
+        import os
+
+        try:
+            from drive_helper import DriveUploader
+        except ImportError:
+            # Try with full path
+            import sys
+            script_dir = Path(__file__).parent
+            if str(script_dir) not in sys.path:
+                sys.path.insert(0, str(script_dir))
+            from drive_helper import DriveUploader
+
+        # Determine filename
+        file_name = name or "diagram.excalidraw"
+        if not file_name.endswith(".excalidraw"):
+            file_name += ".excalidraw"
+
+        # Save to local path or temp file
+        if local_path:
+            save_path = self.save(local_path)
+            cleanup = False
+        else:
+            # Create temp file
+            fd, temp_path = tempfile.mkstemp(suffix=".excalidraw")
+            os.close(fd)
+            save_path = self.save(temp_path)
+            cleanup = True
+
+        try:
+            # Upload to Drive
+            uploader = DriveUploader(folder_id=folder_id)
+            result = uploader.upload(
+                str(save_path),
+                name=file_name,
+                share_public=share_public
+            )
+
+            # Add local path info if saved locally
+            if local_path:
+                result["local_path"] = str(save_path)
+
+            return result
+        finally:
+            # Clean up temp file if used
+            if cleanup and save_path.exists():
+                save_path.unlink()
+
 
 # ============================================================================
 # Flowchart Builder
