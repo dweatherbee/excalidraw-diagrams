@@ -324,18 +324,21 @@ def arrow(
     elements = [elem]
 
     # Add label if provided - always black for readability
+    # Position at midpoint with clear offset to avoid overlap with shapes
     if label:
-        mid_x = start_x + dx / 2
-        # Position label perpendicular to arrow, offset by 25px
-        # For more horizontal arrows, offset vertically
-        # For more vertical arrows, offset horizontally
+        mid_x = start_x + dx * 0.5
+        mid_y = start_y + dy * 0.5
+
+        # Simple offset rules based on arrow direction
+        # For mostly horizontal arrows: place label above
+        # For mostly vertical arrows: place label to the right
         if abs(dx) > abs(dy):
-            # More horizontal - offset above
-            mid_y = start_y + dy / 2 - 25
+            # Horizontal arrow - offset well above (40px)
+            mid_y -= 40
         else:
-            # More vertical - offset to the right
-            mid_x = start_x + dx / 2 + 15
-            mid_y = start_y + dy / 2
+            # Vertical arrow - offset to the right (30px)
+            mid_x += 30
+
         label_elem = text(mid_x, mid_y, label, font_size=14, color="black")
         elements.append(label_elem)
 
