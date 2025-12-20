@@ -1,9 +1,9 @@
 # Test using the reusable skill-ci workflow from anthropics/skills
-name: Test Reusable CI
+name: Skill CI
 
 on:
   push:
-    branches: [test-reusable-ci]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
