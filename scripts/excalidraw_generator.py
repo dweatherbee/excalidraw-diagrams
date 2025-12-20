@@ -469,14 +469,14 @@ class Diagram:
             # Center each line horizontally within the box
             line_y = start_y + i * line_height
             text_elem = text(
-                x + width / 2,  # center x
+                x,  # left edge of box - textAlign:center will center within width
                 line_y,
                 line,
                 font_size=font_size,
                 color="black",
                 align="center"
             )
-            # Adjust text width to fit in box
+            # Set text width to match box, so center alignment works correctly
             text_elem["width"] = width
             text_elem["textAlign"] = "center"
             self.elements.append(text_elem)
