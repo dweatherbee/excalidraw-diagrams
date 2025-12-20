@@ -263,6 +263,15 @@ def text(
         bg_color="transparent",
         **kwargs
     )
+    # Calculate baseline for proper SVG export
+    # Baseline is the distance from top to the text baseline
+    line_height_multiplier = 1.25
+    num_lines = len(lines)
+    baseline = font_size * 0.82  # Single line baseline approximation
+    if num_lines > 1:
+        # For multi-line, baseline is at bottom of first line
+        baseline = font_size * 0.82
+
     elem.update({
         "fontSize": font_size,
         "fontFamily": ff,
@@ -272,7 +281,8 @@ def text(
         "containerId": None,
         "originalText": content,
         "autoResize": True,
-        "lineHeight": 1.25,
+        "lineHeight": line_height_multiplier,
+        "baseline": baseline,
     })
     return elem
 
