@@ -875,23 +875,63 @@ class Diagram:
         sx: float, sy: float,
         ex: float, ey: float,
         from_side: str, to_side: str,
+        routing_margin: float = 50,
     ) -> List[List[float]]:
         """Build an orthogonal path that exits/enters perpendicular to box edges.
 
         The path always starts with a segment perpendicular to from_side
         and ends with a segment perpendicular to to_side.
+
+        For same-side connections (left-left, right-right, top-top, bottom-bottom),
+        the path routes around to avoid crossing through other elements.
         """
         dx = ex - sx
         dy = ey - sy
 
         # Determine exit and entry directions
-        # Exit direction: which way do we go from the start?
-        # Entry direction: which way do we come into the end?
         exit_horizontal = from_side in ("left", "right")
         entry_horizontal = to_side in ("left", "right")
 
-        if exit_horizontal and entry_horizontal:
-            # Both horizontal: go horizontal, then vertical, then horizontal
+        # Handle same-side routing (needs to go around)
+        if from_side == to_side:
+            if from_side == "left":
+                # Exit left, enter left: go left, then vertical, then right
+                offset_x = -routing_margin
+                points = [
+                    [0, 0],
+                    [offset_x, 0],           # Go left
+                    [offset_x, dy],          # Go vertical
+                    [dx, dy],                # Go right to target
+                ]
+            elif from_side == "right":
+                # Exit right, enter right: go right past target, then vertical, then left
+                offset_x = max(dx, 0) + routing_margin
+                points = [
+                    [0, 0],
+                    [offset_x, 0],           # Go right
+                    [offset_x, dy],          # Go vertical
+                    [dx, dy],                # Go left to target
+                ]
+            elif from_side == "top":
+                # Exit top, enter top: go up, then horizontal, then down
+                offset_y = min(dy, 0) - routing_margin
+                points = [
+                    [0, 0],
+                    [0, offset_y],           # Go up
+                    [dx, offset_y],          # Go horizontal
+                    [dx, dy],                # Go down to target
+                ]
+            else:  # bottom
+                # Exit bottom, enter bottom: go down past target, then horizontal, then up
+                offset_y = max(dy, 0) + routing_margin
+                points = [
+                    [0, 0],
+                    [0, offset_y],           # Go down
+                    [dx, offset_y],          # Go horizontal
+                    [dx, dy],                # Go up to target
+                ]
+        elif exit_horizontal and entry_horizontal:
+            # Both horizontal but different sides: go horizontal, then vertical, then horizontal
             mid_x = dx / 2
             points = [
                 [0, 0],
@@ -900,7 +940,7 @@ class Diagram:
                 [dx, dy],       # Horizontal to end
             ]
         elif not exit_horizontal and not entry_horizontal:
-            # Both vertical: go vertical, then horizontal, then vertical
+            # Both vertical but different sides: go vertical, then horizontal, then vertical
             mid_y = dy / 2
             points = [
                 [0, 0],
@@ -1182,12 +1222,24 @@ class Flowchart(Diagram):
         to_id: str,
         label: Optional[str] = None,
         color: str = "black",
+        from_side: Literal["right", "bottom", "left", "top", "auto"] = "auto",
+        to_side: Literal["left", "top", "right", "bottom", "auto"] = "auto",
     ) -> None:
-        """Connect two nodes with an arrow."""
+        """Connect two nodes with an arrow.
+
+        Args:
+            from_id: Source node ID
+            to_id: Target node ID
+            label: Optional label for the arrow
+            color: Arrow color
+            from_side: Which side to exit from (auto detects based on position)
+            to_side: Which side to enter to (auto detects based on position)
+        """
         source = self._nodes.get(from_id)
         target = self._nodes.get(to_id)
         if source and target:
-            self.arrow_between(source, target, label=label, color=color)
+            self.arrow_between(source, target, label=label, color=color,
+                             from_side=from_side, to_side=to_side)
 
     def position_at(self, x: float, y: float) -> "Flowchart":
         """Set position for next node."""

@@ -165,24 +165,35 @@ jobs:
           arch.save('diagrams/01_architecture.excalidraw')
           print('✓ Architecture diagram')
 
-          # 2. Flowchart with decisions
+          # 2. Flowchart with decisions - using two-column branch layout
           fc = Flowchart(
               direction='vertical',
-              spacing=100,
+              spacing=80,
               flowchart_style=FlowchartStyle(decision_color='orange')
           )
+          # Main column - center
+          fc.position_at(200, 50)
           fc.start('Start')
           fc.process('input', 'Get Input')
           fc.decision('valid', 'Valid?')
+
+          # Yes branch (right column)
+          fc.position_at(350, 380)
           fc.process('proc', 'Process Data')
-          fc.process('error', 'Show Error')
           fc.end('End')
+
+          # No branch (left column) - for loop back
+          fc.position_at(50, 380)
+          fc.process('error', 'Show Error')
+
+          # Connections
           fc.connect('__start__', 'input')
           fc.connect('input', 'valid')
           fc.connect('valid', 'proc', 'Yes')
           fc.connect('valid', 'error', 'No')
           fc.connect('proc', '__end__')
-          fc.connect('error', 'input')
+          # Loop back: exit left, enter left to route around other boxes
+          fc.connect('error', 'input', from_side='left', to_side='left')
           fc.save('diagrams/02_flowchart.excalidraw')
           print('✓ Flowchart diagram')
 
