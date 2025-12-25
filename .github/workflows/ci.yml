@@ -345,6 +345,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # Clean untracked files before switching branches
+          git clean -fd
+
           # Fetch gh-pages if it exists, otherwise create orphan
           if git fetch origin gh-pages:gh-pages 2>/dev/null; then
             git checkout gh-pages
