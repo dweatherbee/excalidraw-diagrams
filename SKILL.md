@@ -119,6 +119,104 @@ d.save("output/my_diagram")  # Creates output/my_diagram.excalidraw
 
 ---
 
+## Configuration & Styling
+
+The diagram generator supports extensive customization through configuration classes.
+
+### DiagramStyle - Global Appearance
+
+Control the overall look of all elements in the diagram:
+
+```python
+from excalidraw_generator import Diagram, DiagramStyle
+
+# Create a clean, professional diagram
+d = Diagram(diagram_style=DiagramStyle(
+    roughness=0,           # 0=clean, 1=hand-drawn, 2=rough sketch
+    stroke_style="solid",  # "solid", "dashed", "dotted"
+    stroke_width=2,        # Line thickness (1-4)
+    color_scheme="corporate"  # Named color scheme
+))
+```
+
+**Roughness levels:**
+- `0` - Architect: Clean, precise lines
+- `1` - Artist: Normal hand-drawn look (default)
+- `2` - Cartoonist: Rough, sketchy appearance
+
+### Color Schemes
+
+Use semantic colors from predefined schemes:
+
+```python
+# Available schemes: "default", "monochrome", "corporate", "vibrant", "earth"
+d = Diagram(diagram_style=DiagramStyle(color_scheme="vibrant"))
+
+# Get colors by role
+primary = d.scheme_color("primary")     # Main components
+secondary = d.scheme_color("secondary") # Supporting elements
+accent = d.scheme_color("accent")       # Highlights
+warning = d.scheme_color("warning")     # Caution states
+danger = d.scheme_color("danger")       # Error states
+neutral = d.scheme_color("neutral")     # Backgrounds, users
+```
+
+**Scheme color mappings:**
+| Scheme | Primary | Secondary | Accent | Warning | Danger |
+|--------|---------|-----------|--------|---------|--------|
+| default | blue | green | violet | yellow | red |
+| monochrome | black | gray | gray | gray | black |
+| corporate | blue | teal | violet | orange | red |
+| vibrant | violet | cyan | orange | yellow | red |
+| earth | teal | green | orange | yellow | red |
+
+### FlowchartStyle - Flowchart Customization
+
+Customize flowchart node colors and routing behavior:
+
+```python
+from excalidraw_generator import Flowchart, FlowchartStyle
+
+fc = Flowchart(flowchart_style=FlowchartStyle(
+    start_color="cyan",      # Start node color
+    end_color="red",         # End node color
+    process_color="blue",    # Process node color
+    decision_color="orange", # Decision diamond color
+))
+```
+
+### ArchitectureStyle - Architecture Diagram Customization
+
+```python
+from excalidraw_generator import ArchitectureDiagram, ArchitectureStyle
+
+arch = ArchitectureDiagram(architecture_style=ArchitectureStyle(
+    component_color="blue",
+    database_color="green",
+    service_color="violet",
+    user_color="gray",
+))
+```
+
+### BoxStyle - Text Box Sizing
+
+Control automatic text box sizing:
+
+```python
+from excalidraw_generator import Diagram, BoxStyle
+
+d = Diagram(box_style=BoxStyle(
+    h_padding=40,      # Horizontal padding (total)
+    v_padding=24,      # Vertical padding (total)
+    min_width=80,      # Minimum box width
+    min_height=40,     # Minimum box height
+    font_size=18,      # Default font size
+    font_family="hand" # "hand", "normal", "code"
+))
+```
+
+---
+
 ### Flowchart Class
 
 Specialized for flowcharts with automatic positioning.
@@ -151,6 +249,60 @@ fc.save("flowchart.excalidraw")
 - `node(node_id, label, shape, color, width, height)` - Generic node
 - `connect(from_id, to_id, label=None)` - Arrow between nodes
 - `position_at(x, y)` - Set position for next node
+
+---
+
+### AutoLayoutFlowchart Class
+
+For complex flowcharts with automatic hierarchical layout. Requires `grandalf` package.
+
+```python
+from excalidraw_generator import AutoLayoutFlowchart, DiagramStyle, FlowchartStyle, LayoutConfig
+
+fc = AutoLayoutFlowchart(
+    diagram_style=DiagramStyle(roughness=0),  # Clean lines
+    flowchart_style=FlowchartStyle(decision_color="orange"),
+    layout_config=LayoutConfig(
+        vertical_spacing=100,
+        horizontal_spacing=80,
+    )
+)
+
+# Add nodes with semantic types
+fc.add_node("start", "Start", shape="ellipse", color="green", node_type="terminal")
+fc.add_node("process1", "Validate Input", node_type="process")
+fc.add_node("check", "Is Valid?", shape="diamond", color="yellow", node_type="decision")
+fc.add_node("success", "Process Data", node_type="process")
+fc.add_node("error", "Show Error", color="red", node_type="process")
+fc.add_node("end", "End", shape="ellipse", color="red", node_type="terminal")
+
+# Add edges (arrows)
+fc.add_edge("start", "process1")
+fc.add_edge("process1", "check")
+fc.add_edge("check", "success", label="Yes")
+fc.add_edge("check", "error", label="No")
+fc.add_edge("success", "end")
+fc.add_edge("error", "process1", label="Retry")  # Back-edge auto-routes through whitespace
+
+# Compute layout and render
+result = fc.compute_layout(
+    two_column=True,           # Split tall diagrams into columns
+    target_aspect_ratio=0.8,   # Target width/height ratio
+)
+
+fc.save("auto_flowchart.excalidraw")
+```
+
+**Node types for routing:**
+- `terminal` - Start/end nodes
+- `process` - Standard processing steps
+- `decision` - Decision diamonds (arrows exit from sides)
+
+#### Methods
+
+- `add_node(node_id, label, shape, color, width, height, node_type)` - Add a node
+- `add_edge(from_id, to_id, label, color)` - Add an edge
+- `compute_layout(start_x, start_y, max_width, max_height, routing, two_column, target_aspect_ratio, column_gap)` - Auto-position nodes
 
 ---
 
@@ -318,45 +470,35 @@ After generating a `.excalidraw` file:
 
 ---
 
-## Exporting to SVG/PNG
+## Exporting to PNG
 
-To embed diagrams in Google Docs, presentations, or other documents, export them to SVG or PNG.
+To embed diagrams in Google Docs, presentations, or other documents, export them to PNG using Playwright.
 
 ### Using the Export Script
 
 ```bash
-# Export to SVG
-python3 ~/.claude/skills/excalidraw-diagrams/scripts/export_diagram.py diagram.excalidraw diagram.svg
+# First time setup: install dependencies
+cd ~/.claude/skills/excalidraw-diagrams/scripts
+npm install
+npx playwright install chromium
 
-# Export to PNG (requires rsvg-convert, ImageMagick, or Inkscape)
-python3 ~/.claude/skills/excalidraw-diagrams/scripts/export_diagram.py diagram.excalidraw diagram.png
+# Export to PNG
+node ~/.claude/skills/excalidraw-diagrams/scripts/export_playwright.js diagram.excalidraw output.png
 ```
 
-### Using npx Directly
+### How It Works
 
-```bash
-# Export to SVG using excalidraw_export
-npx excalidraw_export diagram.excalidraw diagram.svg
-```
-
-### In Python Code
-
-```python
-import sys, os
-sys.path.insert(0, os.path.expanduser("~/.claude/skills/excalidraw-diagrams/scripts"))
-from export_diagram import export_to_svg, export_to_png
-
-# Export to SVG
-svg_path = export_to_svg("diagram.excalidraw", "output.svg")
-
-# Export to PNG (2x scale for retina)
-png_path = export_to_png("diagram.excalidraw", "output.png", scale=2.0)
-```
+The Playwright export script:
+1. Opens excalidraw.com in a headless Chromium browser
+2. Loads your diagram via drag-and-drop simulation
+3. Fits the view to content (Shift+1)
+4. Screenshots the canvas at 1920x1200 resolution
 
 ### Requirements
 
-- **Node.js/npm**: Required for `npx excalidraw_export`
-- **For PNG**: One of: `rsvg-convert` (librsvg), `convert` (ImageMagick), or `inkscape`
+- **Node.js**: Version 18 or later
+- **Playwright**: Installed via `npm install` in the scripts directory
+- **Chromium**: Installed via `npx playwright install chromium`
 
 ---
 
@@ -516,9 +658,9 @@ drive_result = arch.save_to_drive("architecture.excalidraw", share_public=True)
 file_id = drive_result["file"]["id"]
 edit_url = drive_result["edit_url"]
 
-# 3. Export to PNG
+# 3. Export to PNG using Playwright
 subprocess.run([
-    "python3", os.path.expanduser("~/.claude/skills/excalidraw-diagrams/scripts/export_diagram.py"),
+    "node", os.path.expanduser("~/.claude/skills/excalidraw-diagrams/scripts/export_playwright.js"),
     "/tmp/architecture.excalidraw", "/tmp/architecture.png"
 ])
 

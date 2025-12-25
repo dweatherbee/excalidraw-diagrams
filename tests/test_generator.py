@@ -93,7 +93,11 @@ class TestElementCreation:
         assert len(elems) >= 1
         arrow_elem = elems[0]
         assert arrow_elem["type"] == "arrow"
-        assert arrow_elem["points"] == [[0, 0], [100, 50]]
+        # Arrow may use orthogonal routing for diagonal paths
+        assert len(arrow_elem["points"]) >= 2
+        assert arrow_elem["points"][0] == [0, 0]  # Start point
+        assert arrow_elem["points"][-1][0] == 100  # End x
+        assert arrow_elem["points"][-1][1] == 50   # End y
         assert arrow_elem["endArrowhead"] == "arrow"
         assert arrow_elem["startArrowhead"] is None
 
@@ -135,8 +139,9 @@ class TestDiagram:
         elem = d.box(100, 100, "Test Box")
         assert elem.x == 100
         assert elem.y == 100
-        assert elem.width == 150
-        assert elem.height == 60
+        # Box dimensions are now auto-calculated from text
+        assert elem.width >= 80  # Minimum width from BoxStyle
+        assert elem.height >= 40  # Minimum height from BoxStyle
         # Should create rectangle + text
         assert len(d.elements) == 2
         assert d.elements[0]["type"] == "rectangle"

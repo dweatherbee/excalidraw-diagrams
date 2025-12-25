@@ -111,6 +111,176 @@ BG_FOR_STROKE = {
 
 
 # ============================================================================
+# Configuration Classes
+# ============================================================================
+
+# Font metrics for different font families (char_width multiplier, line_height multiplier)
+FONT_METRICS = {
+    "hand": {"char_width": 0.6, "line_height": 1.35},
+    "normal": {"char_width": 0.55, "line_height": 1.25},
+    "code": {"char_width": 0.6, "line_height": 1.4},
+    "excalifont": {"char_width": 0.6, "line_height": 1.35},
+}
+
+
+@dataclass
+class BoxStyle:
+    """Style configuration for box elements."""
+    h_padding: float = 40      # Horizontal padding (total, split between sides)
+    v_padding: float = 24      # Vertical padding (total, split between top/bottom)
+    min_width: float = 80      # Minimum box width
+    min_height: float = 40     # Minimum box height
+    font_size: int = 18        # Default font size for box labels
+    font_family: str = "hand"  # Font family for box labels
+
+
+@dataclass
+class RoutingConfig:
+    """Configuration for arrow routing behavior."""
+    alignment_threshold: float = 20    # Pixels - if within this range, use straight line
+    orthogonal_angle_min: float = 0.2  # Min angle ratio for orthogonal routing
+    orthogonal_angle_max: float = 0.8  # Max angle ratio for orthogonal routing
+    label_offset_h: float = 18         # Label offset for horizontal segments
+    label_offset_v: float = 12         # Label offset for vertical segments
+    label_font_size: int = 14          # Font size for arrow labels
+
+
+@dataclass
+class FlowchartStyle:
+    """Style configuration for flowchart diagrams."""
+    # Node colors by type
+    start_color: str = "green"
+    end_color: str = "red"
+    process_color: str = "blue"
+    decision_color: str = "yellow"
+
+    # Decision branch routing
+    decision_branch_extent: float = 30     # Horizontal extent from diamond
+    decision_label_offset_left: float = -25
+    decision_label_offset_right: float = 10
+    decision_label_offset_y: float = -20
+
+    # Back-edge routing
+    back_edge_margin: float = 40           # Base margin from diagram edge
+    back_edge_span_multiplier: float = 0.15  # Additional offset as fraction of span
+    back_edge_label_offset: float = 10
+
+    # Column connector routing
+    column_connector_clearance: float = 20  # Clearance before entering target
+    column_connector_label_offset: float = 10
+
+
+@dataclass
+class LayoutConfig:
+    """Configuration for layout algorithms."""
+    horizontal_spacing: float = 80
+    vertical_spacing: float = 100
+    direction: str = "TB"  # TB (top-bottom) or LR (left-right)
+
+    # Column splitting
+    target_aspect_ratio: float = 1.0
+    aspect_ratio_tolerance: float = 0.7
+    column_gap: float = 150
+    min_layers_to_split: int = 4
+
+
+@dataclass
+class ArchitectureStyle:
+    """Style configuration for architecture diagrams."""
+    component_color: str = "blue"
+    database_color: str = "green"
+    service_color: str = "violet"
+    user_color: str = "gray"
+    queue_color: str = "orange"
+    cache_color: str = "cyan"
+
+
+@dataclass
+class DiagramStyle:
+    """Global style settings for the entire diagram.
+
+    Attributes:
+        roughness: Sloppiness level (0=architect/clean, 1=artist/normal, 2=cartoonist/rough)
+        stroke_style: Line style ("solid", "dashed", "dotted")
+        color_scheme: Named color scheme ("default", "monochrome", "corporate", "vibrant")
+    """
+    roughness: int = 1              # 0=clean lines, 1=normal hand-drawn, 2=rough sketch
+    stroke_style: str = "solid"     # solid, dashed, dotted
+    stroke_width: int = 2           # Line thickness (1-4)
+    color_scheme: str = "default"   # Color scheme name
+
+
+# Predefined color schemes
+COLOR_SCHEMES = {
+    "default": {
+        # Standard Excalidraw colors
+        "primary": "blue",
+        "secondary": "green",
+        "accent": "violet",
+        "warning": "yellow",
+        "danger": "red",
+        "neutral": "gray",
+        "info": "cyan",
+        "highlight": "orange",
+    },
+    "monochrome": {
+        "primary": "black",
+        "secondary": "gray",
+        "accent": "gray",
+        "warning": "gray",
+        "danger": "black",
+        "neutral": "gray",
+        "info": "gray",
+        "highlight": "black",
+    },
+    "corporate": {
+        "primary": "blue",
+        "secondary": "teal",
+        "accent": "violet",
+        "warning": "orange",
+        "danger": "red",
+        "neutral": "gray",
+        "info": "cyan",
+        "highlight": "blue",
+    },
+    "vibrant": {
+        "primary": "violet",
+        "secondary": "cyan",
+        "accent": "orange",
+        "warning": "yellow",
+        "danger": "red",
+        "neutral": "teal",
+        "info": "blue",
+        "highlight": "green",
+    },
+    "earth": {
+        "primary": "teal",
+        "secondary": "green",
+        "accent": "orange",
+        "warning": "yellow",
+        "danger": "red",
+        "neutral": "gray",
+        "info": "cyan",
+        "highlight": "teal",
+    },
+}
+
+
+def get_scheme_color(scheme_name: str, role: str) -> str:
+    """Get a color from a named scheme.
+
+    Args:
+        scheme_name: Name of the color scheme
+        role: Semantic role (primary, secondary, accent, warning, danger, neutral, info, highlight)
+
+    Returns:
+        Color name from the scheme
+    """
+    scheme = COLOR_SCHEMES.get(scheme_name, COLOR_SCHEMES["default"])
+    return scheme.get(role, "blue")
+
+
+# ============================================================================
 # Element Classes
 # ============================================================================
 
@@ -287,6 +457,40 @@ def text(
     return elem
 
 
+def measure_text_for_box(
+    label: str,
+    font_size: int = 18,
+    font_family: str = "hand",
+    box_style: BoxStyle = None,
+) -> tuple:
+    """
+    Calculate required dimensions for text content in a box.
+
+    Args:
+        label: Text content (supports multi-line with \\n)
+        font_size: Font size in pixels
+        font_family: Font family name (hand, normal, code, excalifont)
+        box_style: Optional BoxStyle for padding/min size (uses defaults if None)
+
+    Returns (width, height) with appropriate padding for a box element.
+    """
+    style = box_style or BoxStyle()
+    metrics = FONT_METRICS.get(font_family, FONT_METRICS["hand"])
+
+    lines = label.split("\n")
+    max_line_len = max(len(line) for line in lines) if lines else 0
+
+    # Calculate text dimensions using font metrics
+    text_width = max_line_len * font_size * metrics["char_width"]
+    text_height = len(lines) * font_size * metrics["line_height"]
+
+    # Add padding from style config
+    box_width = max(style.min_width, text_width + style.h_padding)
+    box_height = max(style.min_height, text_height + style.v_padding)
+
+    return (box_width, box_height)
+
+
 def arrow(
     start_x: float,
     start_y: float,
@@ -296,14 +500,50 @@ def arrow(
     start_head: Optional[str] = None,
     end_head: str = "arrow",
     label: Optional[str] = None,
+    routing: str = "auto",  # "auto", "straight", "orthogonal"
     **kwargs
 ) -> List[dict]:
-    """Create an arrow element, optionally with a label. Returns list of elements."""
+    """Create an arrow element, optionally with a label. Returns list of elements.
+
+    Args:
+        routing: "straight" for direct line, "orthogonal" for right-angle routing,
+                 "auto" to choose based on alignment
+    """
     stroke = COLORS.get(color, color)
 
     # Calculate points relative to start
     dx = end_x - start_x
     dy = end_y - start_y
+
+    # Determine if we should use orthogonal routing
+    use_orthogonal = False
+    alignment_threshold = 30  # Pixels - if within this range, consider "aligned"
+
+    if routing == "orthogonal":
+        use_orthogonal = True
+    elif routing == "auto":
+        # Use orthogonal only if significantly offset in both dimensions
+        # and not close to 45 degrees
+        if abs(dx) > alignment_threshold and abs(dy) > alignment_threshold:
+            angle_ratio = min(abs(dx), abs(dy)) / max(abs(dx), abs(dy))
+            # If ratio is between 0.2 and 0.8, it's awkward diagonal - use orthogonal
+            if 0.2 < angle_ratio < 0.8:
+                use_orthogonal = True
+
+    if use_orthogonal and abs(dx) > alignment_threshold and abs(dy) > alignment_threshold:
+        # Create orthogonal path: vertical first, then horizontal (or vice versa)
+        # Choose based on which direction is dominant
+        if abs(dy) > abs(dx):
+            # Mostly vertical - go vertical first, then horizontal
+            mid_y = dy / 2
+            points = [[0, 0], [0, mid_y], [dx, mid_y], [dx, dy]]
+        else:
+            # Mostly horizontal - go horizontal first, then vertical
+            mid_x = dx / 2
+            points = [[0, 0], [mid_x, 0], [mid_x, dy], [dx, dy]]
+    else:
+        # Straight line
+        points = [[0, 0], [dx, dy]]
 
     elem = _base_element(
         "arrow", start_x, start_y,
@@ -312,32 +552,50 @@ def arrow(
         bg_color="transparent",
         **kwargs
     )
+    # Use elbowed mode for orthogonal routing (sharp 90-degree corners)
+    is_orthogonal = len(points) > 2
     elem.update({
-        "points": [[0, 0], [dx, dy]],
+        "points": points,
         "startBinding": None,
         "endBinding": None,
         "startArrowhead": ARROWHEADS.get(start_head),
         "endArrowhead": ARROWHEADS.get(end_head, "arrow"),
-        "elbowed": False,
+        "elbowed": is_orthogonal,  # Sharp corners for orthogonal paths
+        "roundness": None if is_orthogonal else ROUNDNESS.get("round"),
     })
+    # Add elbow-specific properties when elbowed
+    if is_orthogonal:
+        elem.update({
+            "fixedSegments": None,
+            "startIsSpecial": None,
+            "endIsSpecial": None,
+        })
 
     elements = [elem]
 
     # Add label if provided - always black for readability
     # Position at midpoint with clear offset to avoid overlap with shapes
     if label:
-        mid_x = start_x + dx * 0.5
-        mid_y = start_y + dy * 0.5
-
-        # Simple offset rules based on arrow direction
-        # For mostly horizontal arrows: place label above
-        # For mostly vertical arrows: place label to the right
-        if abs(dx) > abs(dy):
-            # Horizontal arrow - offset well above (40px)
-            mid_y -= 40
+        # For orthogonal paths, place label at the middle segment
+        if len(points) > 2:
+            # Middle of the path
+            mid_idx = len(points) // 2
+            p1 = points[mid_idx - 1]
+            p2 = points[mid_idx]
+            mid_x = start_x + (p1[0] + p2[0]) / 2
+            mid_y = start_y + (p1[1] + p2[1]) / 2
+            # Offset based on segment direction
+            if abs(p2[0] - p1[0]) > abs(p2[1] - p1[1]):
+                mid_y -= 20  # Horizontal segment - label above
+            else:
+                mid_x += 20  # Vertical segment - label to right
         else:
-            # Vertical arrow - offset to the right (30px)
-            mid_x += 30
+            mid_x = start_x + dx * 0.5
+            mid_y = start_y + dy * 0.5
+            if abs(dx) > abs(dy):
+                mid_y -= 20
+            else:
+                mid_x += 20
 
         label_elem = text(mid_x, mid_y, label, font_size=14, color="black")
         elements.append(label_elem)
@@ -420,9 +678,18 @@ class Element:
 class Diagram:
     """High-level API for creating Excalidraw diagrams."""
 
-    def __init__(self, background: str = "#ffffff"):
+    def __init__(
+        self,
+        background: str = "#ffffff",
+        box_style: BoxStyle = None,
+        routing_config: RoutingConfig = None,
+        diagram_style: DiagramStyle = None,
+    ):
         self.elements: List[dict] = []
         self.background = background
+        self.box_style = box_style or BoxStyle()
+        self.routing = routing_config or RoutingConfig()
+        self.style = diagram_style or DiagramStyle()
 
     def add(self, *elements: Union[dict, List[dict]]) -> None:
         """Add raw elements to the diagram."""
@@ -432,54 +699,87 @@ class Diagram:
             else:
                 self.elements.append(elem)
 
+    def scheme_color(self, role: str) -> str:
+        """Get a color from the current color scheme.
+
+        Args:
+            role: Semantic color role - "primary", "secondary", "accent",
+                  "warning", "danger", "neutral", "info", or "highlight"
+
+        Returns:
+            The color name from the current scheme.
+        """
+        return get_scheme_color(self.style.color_scheme, role)
+
     def box(
         self,
         x: float,
         y: float,
         label: str,
-        width: float = 150,
-        height: float = 60,
+        width: float = None,
+        height: float = None,
         color: str = "blue",
         shape: Literal["rectangle", "ellipse", "diamond"] = "rectangle",
-        font_size: int = 18,
+        font_size: int = None,
     ) -> Element:
-        """Create a labeled box (rectangle, ellipse, or diamond)."""
+        """Create a labeled box (rectangle, ellipse, or diamond).
+
+        If width or height is not specified, they are auto-calculated based on
+        the label text content with appropriate padding.
+        """
+        # Use configured font size if not specified
+        if font_size is None:
+            font_size = self.box_style.font_size
+
+        # Auto-calculate dimensions if not specified
+        if width is None or height is None:
+            auto_width, auto_height = measure_text_for_box(
+                label, font_size, self.box_style.font_family, self.box_style
+            )
+            if width is None:
+                width = auto_width
+            if height is None:
+                height = auto_height
+
         shape_funcs = {
             "rectangle": rectangle,
             "ellipse": ellipse,
             "diamond": diamond,
         }
-        shape_elem = shape_funcs[shape](x, y, width, height, color=color)
+        # Apply diagram-wide style settings
+        shape_elem = shape_funcs[shape](
+            x, y, width, height, color=color,
+            roughness=self.style.roughness,
+            stroke_style=self.style.stroke_style,
+            stroke_width=self.style.stroke_width,
+        )
 
         # Add shape first (background)
         self.elements.append(shape_elem)
 
-        # Add centered text as standalone element (not bound to shape)
-        # This avoids rendering issues with bound text
+        # Add centered text as a single element (supports multi-line with \n)
         lines = label.split("\n")
-        line_height = font_size * 1.3
+        metrics = FONT_METRICS.get(self.box_style.font_family, FONT_METRICS["hand"])
+        line_height = font_size * metrics["line_height"]
         total_text_height = len(lines) * line_height
 
-        # Calculate center position for text block
-        start_y = y + (height - total_text_height) / 2 + font_size * 0.3
+        # Calculate vertical center position for text block
+        text_y = y + (height - total_text_height) / 2 + font_size * 0.2
 
-        for i, line in enumerate(lines):
-            if not line.strip():
-                continue
-            # Center each line horizontally within the box
-            line_y = start_y + i * line_height
-            text_elem = text(
-                x,  # left edge of box - textAlign:center will center within width
-                line_y,
-                line,
-                font_size=font_size,
-                color="black",
-                align="center"
-            )
-            # Set text width to match box, so center alignment works correctly
-            text_elem["width"] = width
-            text_elem["textAlign"] = "center"
-            self.elements.append(text_elem)
+        # Create single text element with full label (including \n)
+        text_elem = text(
+            x,  # left edge of box - textAlign:center will center within width
+            text_y,
+            label,  # Full label with \n characters preserved
+            font_size=font_size,
+            color="black",
+            align="center"
+        )
+        # Set text width to match box, so center alignment works correctly
+        text_elem["width"] = width
+        text_elem["textAlign"] = "center"
+        text_elem["verticalAlign"] = "top"
+        self.elements.append(text_elem)
 
         return Element(shape_elem, x, y, width, height)
 
@@ -504,8 +804,14 @@ class Diagram:
         color: str = "black",
         from_side: Literal["right", "bottom", "left", "top", "auto"] = "auto",
         to_side: Literal["left", "top", "right", "bottom", "auto"] = "auto",
+        routing: Literal["auto", "straight", "orthogonal"] = "auto",
     ) -> None:
-        """Draw an arrow between two elements."""
+        """Draw an arrow between two elements.
+
+        Args:
+            routing: "straight" for direct line, "orthogonal" for right-angle routing,
+                     "auto" to choose based on alignment
+        """
         # Determine connection points
         if from_side == "auto" and to_side == "auto":
             # Auto-detect best sides based on relative position
@@ -541,8 +847,135 @@ class Diagram:
         else:  # bottom
             ex, ey = target.center_x, target.bottom
 
-        elems = arrow(sx, sy, ex, ey, color=color, label=label)
-        self.elements.extend(elems)
+        dx = ex - sx
+        dy = ey - sy
+
+        # For orthogonal routing, build path that respects entry/exit directions
+        threshold = self.routing.alignment_threshold
+        use_orthogonal = routing == "orthogonal" or (
+            routing == "auto" and abs(dx) > threshold and abs(dy) > threshold
+        )
+
+        if use_orthogonal:
+            # Build path with perpendicular entry/exit
+            points = self._build_orthogonal_path(sx, sy, ex, ey, from_side, to_side)
+            self._draw_elbowed_arrow(sx, sy, points, color, label)
+        else:
+            # Straight line or nearly aligned
+            elems = arrow(
+                sx, sy, ex, ey, color=color, label=label, routing="straight",
+                roughness=self.style.roughness,
+                stroke_style=self.style.stroke_style,
+                stroke_width=self.style.stroke_width,
+            )
+            self.elements.extend(elems)
+
+    def _build_orthogonal_path(
+        self,
+        sx: float, sy: float,
+        ex: float, ey: float,
+        from_side: str, to_side: str,
+    ) -> List[List[float]]:
+        """Build an orthogonal path that exits/enters perpendicular to box edges.
+
+        The path always starts with a segment perpendicular to from_side
+        and ends with a segment perpendicular to to_side.
+        """
+        dx = ex - sx
+        dy = ey - sy
+
+        # Determine exit and entry directions
+        # Exit direction: which way do we go from the start?
+        # Entry direction: which way do we come into the end?
+        exit_horizontal = from_side in ("left", "right")
+        entry_horizontal = to_side in ("left", "right")
+
+        if exit_horizontal and entry_horizontal:
+            # Both horizontal: go horizontal, then vertical, then horizontal
+            mid_x = dx / 2
+            points = [
+                [0, 0],
+                [mid_x, 0],      # Horizontal from start
+                [mid_x, dy],    # Vertical
+                [dx, dy],       # Horizontal to end
+            ]
+        elif not exit_horizontal and not entry_horizontal:
+            # Both vertical: go vertical, then horizontal, then vertical
+            mid_y = dy / 2
+            points = [
+                [0, 0],
+                [0, mid_y],     # Vertical from start
+                [dx, mid_y],    # Horizontal
+                [dx, dy],       # Vertical to end
+            ]
+        elif exit_horizontal and not entry_horizontal:
+            # Exit horizontal, enter vertical: horizontal then vertical
+            points = [
+                [0, 0],
+                [dx, 0],        # Horizontal to target x
+                [dx, dy],       # Vertical to end
+            ]
+        else:
+            # Exit vertical, enter horizontal: vertical then horizontal
+            points = [
+                [0, 0],
+                [0, dy],        # Vertical to target y
+                [dx, dy],       # Horizontal to end
+            ]
+
+        return points
+
+    def _draw_elbowed_arrow(
+        self,
+        sx: float, sy: float,
+        points: List[List[float]],
+        color: str,
+        label: Optional[str],
+    ) -> None:
+        """Draw an elbowed arrow with the given path points."""
+        stroke = COLORS.get(color, "#1e1e1e")
+
+        # Calculate bounds
+        max_dx = max(abs(p[0]) for p in points)
+        max_dy = max(abs(p[1]) for p in points)
+
+        elem = _base_element(
+            "arrow", sx, sy,
+            max_dx, max_dy,
+            stroke_color=stroke,
+            bg_color="transparent",
+            roughness=self.style.roughness,
+            stroke_style=self.style.stroke_style,
+            stroke_width=self.style.stroke_width,
+        )
+        elem.update({
+            "points": points,
+            "startBinding": None,
+            "endBinding": None,
+            "startArrowhead": None,
+            "endArrowhead": "arrow",
+            "elbowed": True,
+            "roundness": None,
+            "fixedSegments": None,
+            "startIsSpecial": None,
+            "endIsSpecial": None,
+        })
+        self.elements.append(elem)
+
+        # Add label at middle segment using routing config
+        if label and len(points) > 2:
+            mid_idx = len(points) // 2
+            p1 = points[mid_idx - 1]
+            p2 = points[mid_idx]
+            label_x = sx + (p1[0] + p2[0]) / 2
+            label_y = sy + (p1[1] + p2[1]) / 2
+            # Offset based on segment direction
+            if abs(p2[0] - p1[0]) > abs(p2[1] - p1[1]):
+                label_y -= self.routing.label_offset_h  # Horizontal segment - label above
+            else:
+                label_x += self.routing.label_offset_v  # Vertical segment - label to right
+            label_elem = text(label_x, label_y, label, font_size=self.routing.label_font_size, color="black")
+            self.elements.append(label_elem)
 
     def line_between(
         self,
@@ -554,7 +987,10 @@ class Diagram:
         elem = line(
             source.center_x, source.center_y,
             target.center_x, target.center_y,
-            color=color
+            color=color,
+            roughness=self.style.roughness,
+            stroke_style=self.style.stroke_style,
+            stroke_width=self.style.stroke_width,
         )
         self.elements.append(elem)
 
@@ -681,11 +1117,13 @@ class Flowchart(Diagram):
         self,
         direction: Literal["horizontal", "vertical"] = "vertical",
         spacing: int = 80,
+        flowchart_style: FlowchartStyle = None,
         **kwargs
     ):
         super().__init__(**kwargs)
         self.direction = direction
         self.spacing = spacing
+        self.flowchart_style = flowchart_style or FlowchartStyle()
         self._nodes: dict[str, Element] = {}
         self._next_x = 100
         self._next_y = 100
@@ -696,39 +1134,47 @@ class Flowchart(Diagram):
         label: str,
         shape: Literal["rectangle", "ellipse", "diamond"] = "rectangle",
         color: str = "blue",
-        width: float = 150,
-        height: float = 60,
+        width: float = None,
+        height: float = None,
     ) -> Element:
-        """Add a node to the flowchart."""
+        """Add a node to the flowchart.
+
+        If width or height is not specified, they are auto-calculated based on
+        the label text content.
+        """
         elem = self.box(
             self._next_x, self._next_y,
             label, width, height, color, shape
         )
         self._nodes[node_id] = elem
 
-        # Update position for next node
+        # Update position for next node using actual element dimensions
         if self.direction == "vertical":
-            self._next_y += height + self.spacing
+            self._next_y += elem.height + self.spacing
         else:
-            self._next_x += width + self.spacing
+            self._next_x += elem.width + self.spacing
 
         return elem
 
-    def start(self, label: str = "Start") -> Element:
+    def start(self, label: str = "Start", color: str = None) -> Element:
         """Add a start node (rounded rectangle)."""
-        return self.node("__start__", label, shape="ellipse", color="green")
+        node_color = color or self.flowchart_style.start_color
+        return self.node("__start__", label, shape="ellipse", color=node_color)
 
-    def end(self, label: str = "End") -> Element:
+    def end(self, label: str = "End", color: str = None) -> Element:
         """Add an end node."""
-        return self.node("__end__", label, shape="ellipse", color="red")
+        node_color = color or self.flowchart_style.end_color
+        return self.node("__end__", label, shape="ellipse", color=node_color)
 
-    def process(self, node_id: str, label: str, color: str = "blue") -> Element:
+    def process(self, node_id: str, label: str, color: str = None) -> Element:
         """Add a process node (rectangle)."""
-        return self.node(node_id, label, shape="rectangle", color=color)
+        node_color = color or self.flowchart_style.process_color
+        return self.node(node_id, label, shape="rectangle", color=node_color)
 
-    def decision(self, node_id: str, label: str, color: str = "yellow") -> Element:
-        """Add a decision node (diamond)."""
-        return self.node(node_id, label, shape="diamond", color=color, width=120, height=80)
+    def decision(self, node_id: str, label: str, color: str = None) -> Element:
+        """Add a decision node (diamond). Auto-sizes to fit label."""
+        node_color = color or self.flowchart_style.decision_color
+        return self.node(node_id, label, shape="diamond", color=node_color)
 
     def connect(
         self,
@@ -757,8 +1203,9 @@ class Flowchart(Diagram):
 class ArchitectureDiagram(Diagram):
     """Specialized diagram for system architecture."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, architecture_style: ArchitectureStyle = None, **kwargs):
         super().__init__(**kwargs)
+        self.arch_style = architecture_style or ArchitectureStyle()
         self._components: dict[str, Element] = {}
 
     def component(
@@ -767,12 +1214,13 @@ class ArchitectureDiagram(Diagram):
         label: str,
         x: float,
         y: float,
-        width: float = 150,
-        height: float = 80,
-        color: str = "blue",
+        width: float = None,
+        height: float = None,
+        color: str = None,
     ) -> Element:
-        """Add a system component."""
-        elem = self.box(x, y, label, width, height, color)
+        """Add a system component. Auto-sizes to fit label if dimensions not specified."""
+        comp_color = color or self.arch_style.component_color
+        elem = self.box(x, y, label, width, height, comp_color)
         self._components[comp_id] = elem
         return elem
 
@@ -782,10 +1230,11 @@ class ArchitectureDiagram(Diagram):
         label: str,
         x: float,
         y: float,
-        color: str = "green",
+        color: str = None,
     ) -> Element:
-        """Add a database component (ellipse)."""
-        elem = self.box(x, y, label, 120, 60, color, shape="ellipse")
+        """Add a database component (ellipse). Auto-sizes to fit label."""
+        db_color = color or self.arch_style.database_color
+        elem = self.box(x, y, label, None, None, db_color, shape="ellipse")
         self._components[db_id] = elem
         return elem
 
@@ -795,10 +1244,11 @@ class ArchitectureDiagram(Diagram):
         label: str,
         x: float,
         y: float,
-        color: str = "violet",
+        color: str = None,
     ) -> Element:
-        """Add a service component."""
-        elem = self.box(x, y, label, 140, 70, color)
+        """Add a service component. Auto-sizes to fit label."""
+        svc_color = color or self.arch_style.service_color
+        elem = self.box(x, y, label, None, None, svc_color)
         self._components[svc_id] = elem
         return elem
 
@@ -808,9 +1258,11 @@ class ArchitectureDiagram(Diagram):
         label: str = "User",
         x: float = 100,
         y: float = 100,
+        color: str = None,
     ) -> Element:
-        """Add a user/actor."""
-        elem = self.box(x, y, label, 80, 80, "gray", shape="ellipse")
+        """Add a user/actor. Auto-sizes to fit label."""
+        user_color = color or self.arch_style.user_color
+        elem = self.box(x, y, label, None, None, user_color, shape="ellipse")
         self._components[user_id] = elem
         return elem
 
@@ -829,6 +1281,544 @@ class ArchitectureDiagram(Diagram):
             self.arrow_between(source, target, label=label, color=color)
             if bidirectional:
                 self.arrow_between(target, source, color=color)
+
+
+# ============================================================================
+# Auto-Layout Flowchart Builder
+# ============================================================================
+
+class AutoLayoutFlowchart(Diagram):
+    """
+    Flowchart with automatic hierarchical layout.
+
+    Uses the Sugiyama algorithm to automatically position nodes,
+    minimizing edge crossings and producing clean flowcharts.
+
+    Example:
+        fc = AutoLayoutFlowchart()
+        fc.add_node("start", "Start", shape="ellipse", color="green", node_type="terminal")
+        fc.add_node("step1", "Process Data", color="blue", node_type="process")
+        fc.add_node("decision", "Valid?", shape="diamond", color="yellow", node_type="decision")
+        fc.add_node("end", "End", shape="ellipse", color="red", node_type="terminal")
+
+        fc.add_edge("start", "step1")
+        fc.add_edge("step1", "decision")
+        fc.add_edge("decision", "end", label="Yes")
+
+        fc.compute_layout()  # Auto-position all nodes
+        fc.save("flowchart.excalidraw")
+    """
+
+    def __init__(
+        self,
+        horizontal_spacing: float = None,
+        vertical_spacing: float = None,
+        direction: str = None,
+        layout_config: LayoutConfig = None,
+        flowchart_style: FlowchartStyle = None,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+
+        # Use layout config or individual parameters
+        self.layout = layout_config or LayoutConfig()
+        if horizontal_spacing is not None:
+            self.layout.horizontal_spacing = horizontal_spacing
+        if vertical_spacing is not None:
+            self.layout.vertical_spacing = vertical_spacing
+        if direction is not None:
+            self.layout.direction = direction
+
+        # Flowchart-specific styling
+        self.flowchart_style = flowchart_style or FlowchartStyle()
+
+        self._nodes: dict = {}  # id -> node info
+        self._edges: list = []  # list of edge info
+        self._elements_map: dict = {}  # id -> Element
+
+    def add_node(
+        self,
+        node_id: str,
+        label: str,
+        shape: str = "rectangle",
+        color: str = "blue",
+        width: float = None,
+        height: float = None,
+        node_type: str = "process",  # process, decision, terminal, or custom
+    ) -> None:
+        """Add a node to the flowchart. Position will be computed later.
+
+        Args:
+            node_id: Unique identifier for the node
+            label: Text label for the node
+            shape: Visual shape (rectangle, ellipse, diamond)
+            color: Fill color
+            width/height: Optional explicit dimensions (auto-calculated if None)
+            node_type: Semantic type - 'process', 'decision', 'terminal', or custom
+                       Used for routing decisions (decision nodes get side exits)
+        """
+        self._nodes[node_id] = {
+            "id": node_id,
+            "label": label,
+            "shape": shape,
+            "color": color,
+            "width": width,
+            "height": height,
+            "node_type": node_type,
+        }
+
+    def add_edge(
+        self,
+        from_id: str,
+        to_id: str,
+        label: str = None,
+        color: str = "black",
+    ) -> None:
+        """Add an edge between two nodes."""
+        self._edges.append({
+            "from": from_id,
+            "to": to_id,
+            "label": label,
+            "color": color,
+        })
+
+    def compute_layout(
+        self,
+        start_x: float = 100,
+        start_y: float = 100,
+        max_width: float = None,
+        max_height: float = None,
+        routing: str = "auto",
+        two_column: bool = False,
+        target_aspect_ratio: float = 0.8,
+        column_gap: float = 120,
+    ) -> dict:
+        """
+        Compute positions for all nodes using hierarchical layout,
+        then create the visual elements.
+
+        Args:
+            start_x, start_y: Starting position offset
+            max_width: Maximum width (will scale if exceeded)
+            max_height: Maximum height (will scale if exceeded)
+            routing: Arrow routing style ("auto", "straight", "orthogonal")
+            two_column: If True, automatically split tall diagrams into two columns
+            target_aspect_ratio: Target aspect ratio when splitting (default 0.8)
+            column_gap: Gap between columns when splitting
+
+        Returns:
+            Dict with layout metadata: width, height, aspect_ratio, layers, scale_factor, split
+        """
+        # Import layout engine
+        import sys
+        from pathlib import Path
+        script_dir = Path(__file__).parent
+        if str(script_dir) not in sys.path:
+            sys.path.insert(0, str(script_dir))
+
+        from layout_engine import LayoutNode, LayoutEdge, auto_layout, split_to_columns
+
+        # Create layout nodes with auto-sized dimensions
+        layout_nodes = []
+        for node_id, info in self._nodes.items():
+            # Auto-calculate dimensions if not specified
+            w, h = info["width"], info["height"]
+            if w is None or h is None:
+                auto_w, auto_h = measure_text_for_box(info["label"], font_size=18)
+                w = w or auto_w
+                h = h or auto_h
+
+            layout_nodes.append(LayoutNode(
+                id=node_id,
+                label=info["label"],
+                width=w,
+                height=h,
+                data=info
+            ))
+
+        # Create layout edges
+        layout_edges = [
+            LayoutEdge(source_id=e["from"], target_id=e["to"], label=e.get("label"))
+            for e in self._edges
+        ]
+
+        # Compute layout
+        result = auto_layout(
+            layout_nodes,
+            layout_edges,
+            algorithm="hierarchical",
+            horizontal_spacing=self.layout.horizontal_spacing,
+            vertical_spacing=self.layout.vertical_spacing,
+            direction=self.layout.direction
+        )
+
+        # Apply two-column split if requested and needed
+        connector_info = None
+        was_split = False
+        if two_column:
+            result, connector_info = split_to_columns(
+                result,
+                target_aspect_ratio=target_aspect_ratio,
+                column_gap=column_gap
+            )
+            was_split = connector_info is not None
+
+        # Store layout metadata
+        self._layout_result = result
+
+        # Calculate scale factor if max dimensions specified
+        scale_factor = 1.0
+        if max_width and result.width > max_width:
+            scale_factor = min(scale_factor, max_width / result.width)
+        if max_height and result.height > max_height:
+            scale_factor = min(scale_factor, max_height / result.height)
+
+        # Create visual elements at computed positions
+        for node_id, node in result.nodes.items():
+            info = self._nodes[node_id]
+            # Layout engine uses centered coordinates, Excalidraw uses top-left
+            # Convert from centered to top-left coordinates
+            w = node.width * scale_factor
+            h = node.height * scale_factor
+            x = (node.x - node.width / 2) * scale_factor + start_x
+            y = (node.y - node.height / 2) * scale_factor + start_y
+
+            elem = self.box(
+                x, y,
+                info["label"],
+                width=w,
+                height=h,
+                color=info["color"],
+                shape=info["shape"]
+            )
+            self._elements_map[node_id] = elem
+
+        # Track which edges to skip (we'll draw the connector specially)
+        skip_edge = None
+        gap_x = None
+        if connector_info:
+            skip_edge = (connector_info[0], connector_info[1])
+            gap_x = connector_info[2] * scale_factor + start_x if len(connector_info) > 2 else None
+
+        # Calculate diagram bounds for back-edge routing
+        all_elements = list(self._elements_map.values())
+        diagram_right = max(e.right for e in all_elements) if all_elements else 500
+        diagram_left = min(e.left for e in all_elements) if all_elements else 0
+
+        # Create arrows with specified routing
+        for edge in self._edges:
+            source = self._elements_map.get(edge["from"])
+            target = self._elements_map.get(edge["to"])
+            if source and target:
+                # Skip the connector edge - we'll draw it specially
+                if skip_edge and edge["from"] == skip_edge[0] and edge["to"] == skip_edge[1]:
+                    continue
+
+                source_info = self._nodes.get(edge["from"], {})
+                # Use node_type for routing decisions (falls back to shape for compatibility)
+                node_type = source_info.get("node_type", "process")
+                is_decision = node_type == "decision" or source_info.get("shape") == "diamond"
+                has_label = edge.get("label") is not None
+                is_back_edge = target.center_y <= source.center_y
+
+                if is_decision and has_label:
+                    # Decision branch: start from left/right side of diamond
+                    self._draw_decision_branch(
+                        source, target,
+                        label=edge.get("label"),
+                        color=edge.get("color", "black"),
+                        diagram_right=diagram_right,
+                        diagram_left=diagram_left,
+                    )
+                elif is_back_edge:
+                    # Back-edge: route through whitespace
+                    self._draw_back_edge(
+                        source, target,
+                        label=edge.get("label"),
+                        color=edge.get("color", "black"),
+                        diagram_right=diagram_right,
+                    )
+                else:
+                    # Normal forward edge
+                    self.arrow_between(
+                        source, target,
+                        label=edge.get("label"),
+                        color=edge.get("color", "black"),
+                        routing=routing,
+                    )
+
+        # Draw the connector edge with special routing through the gap
+        if connector_info:
+            source = self._elements_map.get(connector_info[0])
+            target = self._elements_map.get(connector_info[1])
+            if source and target:
+                # Find the edge label
+                edge_label = None
+                for e in self._edges:
+                    if e["from"] == connector_info[0] and e["to"] == connector_info[1]:
+                        edge_label = e.get("label")
+                        break
+                # Draw elbowed connector through the gap between columns
+                self._draw_column_connector(source, target, edge_label, scale_factor, gap_x)
+
+        return {
+            "width": result.width * scale_factor,
+            "height": result.height * scale_factor,
+            "aspect_ratio": result.aspect_ratio,
+            "layers": result.layers,
+            "scale_factor": scale_factor,
+            "split": was_split,
+        }
+
+    def _draw_column_connector(
+        self,
+        source: "Element",
+        target: "Element",
+        label: Optional[str],
+        scale_factor: float,
+        gap_x: Optional[float] = None,
+    ) -> None:
+        """Draw an elbowed arrow connecting two columns through the gap.
+
+        Route: right edge of source -> right to gap -> down in gap -> right to target -> top of target
+        All segments are horizontal or vertical (90-degree elbows).
+        """
+        # Start from right side of source (to go toward the gap)
+        sx = source.right
+        sy = source.center_y
+
+        # End at top of target
+        ex = target.center_x
+        ey = target.top
+
+        # If no gap_x provided, calculate midpoint between source and target
+        if gap_x is None:
+            gap_x = (source.right + target.left) / 2
+
+        # Create path with 90-degree turns:
+        # 1. Right from source to gap
+        # 2. Down in the gap
+        # 3. Right from gap to above target
+        # 4. Down to target top
+        clearance = self.flowchart_style.column_connector_clearance
+
+        points = [
+            [0, 0],                              # Start (at source right edge)
+            [gap_x - sx, 0],                     # Right to gap (horizontal)
+            [gap_x - sx, ey - sy - clearance],   # Down in gap (vertical) - stop above target
+            [ex - sx, ey - sy - clearance],      # Right to above target (horizontal)
+            [ex - sx, ey - sy],                  # Down to target (vertical)
+        ]
+
+        stroke = COLORS.get("black", "#1e1e1e")
+        elem = _base_element(
+            "arrow", sx, sy,
+            abs(ex - sx), abs(ey - sy),
+            stroke_color=stroke,
+            bg_color="transparent",
+            roughness=self.style.roughness,
+            stroke_style=self.style.stroke_style,
+            stroke_width=self.style.stroke_width,
+        )
+        elem.update({
+            "points": points,
+            "startBinding": None,
+            "endBinding": None,
+            "startArrowhead": None,
+            "endArrowhead": "arrow",
+            "elbowed": True,  # Sharp 90-degree corners
+            "roundness": None,  # Disable roundness for sharp elbows
+            "fixedSegments": None,
+            "startIsSpecial": None,
+            "endIsSpecial": None,
+        })
+        self.elements.append(elem)
+
+        # Add label in the gap area (on the vertical segment)
+        if label:
+            label_x = gap_x + self.flowchart_style.column_connector_label_offset
+            label_y = sy + (ey - sy) / 2
+            label_elem = text(label_x, label_y, label, font_size=self.routing.label_font_size, color="black")
+            self.elements.append(label_elem)
+
+    def _draw_decision_branch(
+        self,
+        source: "Element",
+        target: "Element",
+        label: Optional[str],
+        color: str,
+        diagram_right: float,
+        diagram_left: float,
+    ) -> None:
+        """Draw an arrow from a decision diamond's left or right point.
+
+        The arrow starts horizontally from the diamond's side, then elbows
+        to reach the target. The first elbow is at the same y-level as the start.
+        """
+        # Determine which side to exit from based on target position
+        target_is_left = target.center_x < source.center_x
+        target_is_below = target.center_y > source.center_y
+
+        if target_is_left:
+            # Exit from left side of diamond
+            sx = source.left
+            sy = source.center_y
+        else:
+            # Exit from right side of diamond
+            sx = source.right
+            sy = source.center_y
+
+        # Determine target connection point
+        if target_is_below:
+            # Target is below - connect to top
+            ex = target.center_x
+            ey = target.top
+        else:
+            # Target is at same level or above - connect to left or right
+            if target_is_left:
+                ex = target.right
+                ey = target.center_y
+            else:
+                ex = target.left
+                ey = target.center_y
+
+        # Build path with elbow at start level
+        if target_is_below:
+            # Path: horizontal at start level, then down, then horizontal to target, then down
+            mid_x = ex  # Go to target's x first
+            points = [
+                [0, 0],                    # Start at diamond side
+                [mid_x - sx, 0],           # Horizontal to above/below target
+                [mid_x - sx, ey - sy],     # Down to target top
+            ]
+        else:
+            # Path: horizontal, then vertical to target level, then horizontal to target
+            # First segment horizontal at diamond level
+            horizontal_extent = self.flowchart_style.decision_branch_extent
+            mid_x = sx + (-horizontal_extent if target_is_left else horizontal_extent)
+            points = [
+                [0, 0],                    # Start at diamond side
+                [mid_x - sx, 0],           # Short horizontal segment
+                [mid_x - sx, ey - sy],     # Vertical to target level
+                [ex - sx, ey - sy],        # Horizontal to target
+            ]
+
+        stroke = COLORS.get(color, "#1e1e1e")
+        elem = _base_element(
+            "arrow", sx, sy,
+            abs(ex - sx), abs(ey - sy),
+            stroke_color=stroke,
+            bg_color="transparent",
+            roughness=self.style.roughness,
+            stroke_style=self.style.stroke_style,
+            stroke_width=self.style.stroke_width,
+        )
+        elem.update({
+            "points": points,
+            "startBinding": None,
+            "endBinding": None,
+            "startArrowhead": None,
+            "endArrowhead": "arrow",
+            "elbowed": True,
+            "roundness": None,
+            "fixedSegments": None,
+            "startIsSpecial": None,
+            "endIsSpecial": None,
+        })
+        self.elements.append(elem)
+
+        # Add label near the start of the arrow (horizontal segment)
+        if label:
+            fc_style = self.flowchart_style
+            label_offset = fc_style.decision_label_offset_left if target_is_left else fc_style.decision_label_offset_right
+            label_x = sx + label_offset
+            label_y = sy + fc_style.decision_label_offset_y
+            label_elem = text(label_x, label_y, label, font_size=self.routing.label_font_size, color="black")
+            self.elements.append(label_elem)
+
+    def _draw_back_edge(
+        self,
+        source: "Element",
+        target: "Element",
+        label: Optional[str],
+        color: str,
+        diagram_right: float,
+    ) -> None:
+        """Draw a back-edge that routes through whitespace on the right side.
+
+        For edges going to a previous (higher) node in the flow, route:
+        right from source -> down/up in whitespace -> left to target's right edge
+
+        Longer back-edges route further out to avoid overlapping shorter ones.
+        """
+        # Start from right side of source
+        sx = source.right
+        sy = source.center_y
+
+        # End at right side of target
+        ex = target.right
+        ey = target.center_y
+
+        # Calculate vertical span of this back-edge
+        vertical_span = abs(ey - sy)
+
+        # Base margin from diagram edge
+        fc_style = self.flowchart_style
+        base_margin = fc_style.back_edge_margin
+
+        # Additional offset based on vertical span - longer edges route further out
+        # This separates overlapping back-edges
+        span_offset = vertical_span * fc_style.back_edge_span_multiplier
+
+        # Route through whitespace on the right, with offset based on span
+        route_x = max(diagram_right + base_margin + span_offset,
+                      sx + base_margin,
+                      ex + base_margin)
+
+        # Build path: right to whitespace, up/down to target level, left to target
+        points = [
+            [0, 0],                        # Start at source right
+            [route_x - sx, 0],             # Horizontal to whitespace
+            [route_x - sx, ey - sy],       # Vertical to target level
+            [ex - sx, ey - sy],            # Horizontal to target right edge
+        ]
+
+        stroke = COLORS.get(color, "#1e1e1e")
+        elem = _base_element(
+            "arrow", sx, sy,
+            abs(route_x - sx), abs(ey - sy),
+            stroke_color=stroke,
+            bg_color="transparent",
+            roughness=self.style.roughness,
+            stroke_style=self.style.stroke_style,
+            stroke_width=self.style.stroke_width,
+        )
+        elem.update({
+            "points": points,
+            "startBinding": None,
+            "endBinding": None,
+            "startArrowhead": None,
+            "endArrowhead": "arrow",
+            "elbowed": True,
+            "roundness": None,
+            "fixedSegments": None,
+            "startIsSpecial": None,
+            "endIsSpecial": None,
+        })
+        self.elements.append(elem)
+
+        # Add label on the vertical segment in whitespace
+        if label:
+            label_x = route_x + fc_style.back_edge_label_offset
+            label_y = sy + (ey - sy) / 2
+            label_elem = text(label_x, label_y, label, font_size=self.routing.label_font_size, color="black")
+            self.elements.append(label_elem)
+
+
+# Import measure_text_for_box for the AutoLayoutFlowchart
+def _import_measure_text():
+    """Make measure_text_for_box available at module level."""
+    pass  # Already defined in this module
 
 
 # ============================================================================
