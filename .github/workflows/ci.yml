@@ -30,6 +30,7 @@ jobs:
           python tests/test_generator.py
           python tests/test_diagram_types.py
           python tests/test_prompt_generation.py
+          python tests/test_line_routing_validator.py
 
       - name: Test example diagram generation
         run: |

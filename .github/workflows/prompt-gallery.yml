@@ -100,6 +100,55 @@ jobs:
           echo "Generated PNGs:"
           ls -la *.png 2>/dev/null || echo "No PNGs generated"
 
+      - name: Validate line routing
+        id: validate
+        run: |
+          cd gallery_output
+          echo "## Line Routing Validation" > validation_report.md
+          echo "" >> validation_report.md
+
+          TOTAL_ERRORS=0
+          TOTAL_WARNINGS=0
+          TOTAL_INFO=0
+
+          for f in ./*.excalidraw; do
+            if [ -f "$f" ]; then
+              name=$(basename "$f" .excalidraw)
+              echo "Validating $name..."
+
+              # Run validator and capture output
+              OUTPUT=$(python3 "$GITHUB_WORKSPACE/scripts/line_routing_validator.py" "$f" 2>&1) || true
+
+              # Count issues
+              ERRORS=$(echo "$OUTPUT" | grep -c '\[ERROR\]' || echo "0")
+              WARNINGS=$(echo "$OUTPUT" | grep -c '\[WARNING\]' || echo "0")
+              INFO=$(echo "$OUTPUT" | grep -c '\[INFO\]' || echo "0")
+
+              TOTAL_ERRORS=$((TOTAL_ERRORS + ERRORS))
+              TOTAL_WARNINGS=$((TOTAL_WARNINGS + WARNINGS))
+              TOTAL_INFO=$((TOTAL_INFO + INFO))
+
+              if [ "$ERRORS" -gt 0 ] || [ "$WARNINGS" -gt 0 ]; then
+                echo "### $name" >> validation_report.md
+                echo '```' >> validation_report.md
+                echo "$OUTPUT" | grep -E '\[(ERROR|WARNING|INFO)\]' >> validation_report.md || true
+                echo '```' >> validation_report.md
+                echo "" >> validation_report.md
+              fi
+            fi
+          done
+
+          echo "" >> validation_report.md
+          echo "**Summary**: $TOTAL_ERRORS errors, $TOTAL_WARNINGS warnings, $TOTAL_INFO info" >> validation_report.md
+
+          # Export for later steps
+          echo "errors=$TOTAL_ERRORS" >> $GITHUB_OUTPUT
+          echo "warnings=$TOTAL_WARNINGS" >> $GITHUB_OUTPUT
+          echo "info=$TOTAL_INFO" >> $GITHUB_OUTPUT
+
+          # Show report
+          cat validation_report.md
+
       - name: Generate gallery HTML
         run: |
           python3 << 'EOF'
@@ -354,6 +403,30 @@ jobs:
           echo "| Diagrams Generated | $GENERATED |" >> $GITHUB_STEP_SUMMARY
           echo "| PNG Exports | $PNGS |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Add validation summary
+          echo "### 🔍 Line Routing Validation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          VALIDATION_ERRORS="${{ steps.validate.outputs.errors }}"
+          VALIDATION_WARNINGS="${{ steps.validate.outputs.warnings }}"
+          VALIDATION_INFO="${{ steps.validate.outputs.info }}"
+          if [ -n "$VALIDATION_ERRORS" ]; then
+            if [ "$VALIDATION_ERRORS" -gt 0 ]; then
+              echo "⚠️ **$VALIDATION_ERRORS errors**, $VALIDATION_WARNINGS warnings, $VALIDATION_INFO info" >> $GITHUB_STEP_SUMMARY
+            elif [ "$VALIDATION_WARNINGS" -gt 0 ]; then
+              echo "⚡ **$VALIDATION_WARNINGS warnings**, $VALIDATION_INFO info" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ No routing issues detected" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "" >> $GITHUB_STEP_SUMMARY
+            if [ -f /tmp/prompt-gallery/validation_report.md ]; then
+              echo "<details><summary>View details</summary>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              cat /tmp/prompt-gallery/validation_report.md >> $GITHUB_STEP_SUMMARY
+              echo "</details>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
 
           if [ "$GENERATED" -gt 0 ]; then
             echo "### Generated Diagrams" >> $GITHUB_STEP_SUMMARY
