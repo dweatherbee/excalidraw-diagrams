@@ -10,6 +10,8 @@ jobs:
   build-release:
     name: Build Release Artifacts
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required to upload release assets
 
     steps:
       - uses: actions/checkout@v4
