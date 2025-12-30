@@ -339,13 +339,14 @@ jobs:
       - name: Generate step summary
         if: always()
         run: |
+          # Use /tmp copies since gh-pages deployment may have changed working directory
           echo "## 🎨 Prompt Gallery Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          # Count results
-          TOTAL_PROMPTS=$(python3 -c "import json; print(len(json.load(open('tests/prompts.json'))['prompts']))")
-          GENERATED=$(ls gallery_output/*.excalidraw 2>/dev/null | wc -l | tr -d ' ')
-          PNGS=$(ls gallery_output/*.png 2>/dev/null | wc -l | tr -d ' ')
+          # Count results from /tmp where we saved files before gh-pages switch
+          TOTAL_PROMPTS=10  # Known from prompts.json
+          GENERATED=$(ls /tmp/prompt-gallery/*.excalidraw 2>/dev/null | wc -l | tr -d ' ')
+          PNGS=$(ls /tmp/prompt-gallery/*.png 2>/dev/null | wc -l | tr -d ' ')
 
           echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
@@ -357,7 +358,7 @@ jobs:
           if [ "$GENERATED" -gt 0 ]; then
             echo "### Generated Diagrams" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            for f in gallery_output/*.excalidraw; do
+            for f in /tmp/prompt-gallery/*.excalidraw; do
               if [ -f "$f" ]; then
                 name=$(basename "$f" .excalidraw)
                 elements=$(python3 -c "import json; print(len(json.load(open('$f')).get('elements', [])))")
