@@ -30,9 +30,13 @@ from pathlib import Path
 
 FONT_FAMILY = {
     "hand": 1,       # Virgil - hand-drawn style
-    "normal": 2,     # Helvetica - clean
+    "normal": 2,     # Helvetica - clean system font
     "code": 3,       # Cascadia - monospace
-    "excalifont": 5,
+    "excalifont": 5, # Excalifont - rough hand-drawn
+    "nunito": 6,     # Nunito - clean sans-serif (good for roughness=0)
+    "lilita": 7,     # Lilita One - bold headings
+    "comic": 8,      # Comic Shanns - playful
+    "liberation": 9, # Liberation Sans - clean sans-serif
 }
 
 TEXT_ALIGN = {"left": "left", "center": "center", "right": "right"}
@@ -116,10 +120,14 @@ BG_FOR_STROKE = {
 
 # Font metrics for different font families (char_width multiplier, line_height multiplier)
 FONT_METRICS = {
-    "hand": {"char_width": 0.6, "line_height": 1.35},
-    "normal": {"char_width": 0.55, "line_height": 1.25},
-    "code": {"char_width": 0.6, "line_height": 1.4},
-    "excalifont": {"char_width": 0.6, "line_height": 1.35},
+    "hand": {"char_width": 0.6, "line_height": 1.35},      # Virgil
+    "normal": {"char_width": 0.55, "line_height": 1.25},   # Helvetica
+    "code": {"char_width": 0.6, "line_height": 1.4},       # Cascadia
+    "excalifont": {"char_width": 0.6, "line_height": 1.35},# Excalifont
+    "nunito": {"char_width": 0.55, "line_height": 1.3},    # Nunito
+    "lilita": {"char_width": 0.65, "line_height": 1.3},    # Lilita One (bold)
+    "comic": {"char_width": 0.58, "line_height": 1.35},    # Comic Shanns
+    "liberation": {"char_width": 0.55, "line_height": 1.25}, # Liberation Sans
 }
 
 
@@ -170,6 +178,213 @@ class FlowchartStyle:
     column_connector_label_offset: float = 10
 
 
+# ============================================================================
+# Grid-Based A* Router for Orthogonal Edge Routing
+# ============================================================================
+
+from heapq import heappush, heappop
+from typing import Set, Dict, Tuple
+
+@dataclass
+class GridRouter:
+    """A* pathfinding on orthogonal grid for connector routing.
+
+    Builds a grid aligned to shape boundaries (not uniform pixels) and uses
+    A* search with a turn penalty to find optimal orthogonal routes that
+    avoid crossing shapes.
+
+    Attributes:
+        shapes: List of Element objects to route around
+        margin: Clearance distance around shapes
+        bend_penalty: Cost penalty for each turn (encourages straight paths)
+    """
+
+    shapes: list  # List[Element] - shapes to avoid
+    margin: float = 15
+    bend_penalty: float = 50
+
+    def __post_init__(self):
+        self.x_coords: List[float] = []
+        self.y_coords: List[float] = []
+        self.obstacles: Set[Tuple[int, int]] = set()
+        self._build_grid()
+
+    def _build_grid(self):
+        """Build grid aligned to shape boundaries."""
+        x_set: Set[float] = set()
+        y_set: Set[float] = set()
+
+        for shape in self.shapes:
+            # Add shape boundaries and margin boundaries
+            x_set.update([
+                shape.left - self.margin,
+                shape.left,
+                shape.center_x,
+                shape.right,
+                shape.right + self.margin
+            ])
+            y_set.update([
+                shape.top - self.margin,
+                shape.top,
+                shape.center_y,
+                shape.bottom,
+                shape.bottom + self.margin
+            ])
+
+        self.x_coords = sorted(x_set)
+        self.y_coords = sorted(y_set)
+
+        # Mark grid cells inside shapes as obstacles
+        for shape in self.shapes:
+            for xi, x in enumerate(self.x_coords):
+                for yi, y in enumerate(self.y_coords):
+                    # Check if point is inside shape (with small tolerance)
+                    if (shape.left - 1 <= x <= shape.right + 1 and
+                        shape.top - 1 <= y <= shape.bottom + 1):
+                        self.obstacles.add((xi, yi))
+
+    def _to_grid(self, x: float, y: float) -> Tuple[int, int]:
+        """Convert world coordinates to nearest grid cell."""
+        xi = min(range(len(self.x_coords)),
+                 key=lambda i: abs(self.x_coords[i] - x))
+        yi = min(range(len(self.y_coords)),
+                 key=lambda i: abs(self.y_coords[i] - y))
+        return (xi, yi)
+
+    def _to_world(self, xi: int, yi: int) -> Tuple[float, float]:
+        """Convert grid cell to world coordinates."""
+        return (self.x_coords[xi], self.y_coords[yi])
+
+    def _neighbors(self, cell: Tuple[int, int]) -> List[Tuple[int, int]]:
+        """Get orthogonal neighbors (up, down, left, right), skipping obstacles."""
+        xi, yi = cell
+        neighbors = []
+        for dxi, dyi in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
+            nxi, nyi = xi + dxi, yi + dyi
+            if (0 <= nxi < len(self.x_coords) and
+                0 <= nyi < len(self.y_coords) and
+                (nxi, nyi) not in self.obstacles):
+                neighbors.append((nxi, nyi))
+        return neighbors
+
+    def _heuristic(self, a: Tuple[int, int], b: Tuple[int, int]) -> float:
+        """Manhattan distance heuristic."""
+        ax, ay = self._to_world(*a)
+        bx, by = self._to_world(*b)
+        return abs(ax - bx) + abs(ay - by)
+
+    def find_route(
+        self,
+        start: Tuple[float, float],
+        end: Tuple[float, float],
+    ) -> List[Tuple[float, float]]:
+        """Find optimal orthogonal route using A*.
+
+        Args:
+            start: (x, y) world coordinates of start point
+            end: (x, y) world coordinates of end point
+
+        Returns:
+            List of (x, y) waypoints for the route
+        """
+        start_cell = self._to_grid(*start)
+        end_cell = self._to_grid(*end)
+
+        # Handle case where start/end are in obstacles (connection points on shapes)
+        # Allow these cells temporarily
+        start_in_obstacle = start_cell in self.obstacles
+        end_in_obstacle = end_cell in self.obstacles
+        if start_in_obstacle:
+            self.obstacles.discard(start_cell)
+        if end_in_obstacle:
+            self.obstacles.discard(end_cell)
+
+        # A* search with turn penalty
+        # State includes direction to penalize turns
+        open_set: list = []
+        heappush(open_set, (0, 0, start_cell, None, [start_cell]))  # (f, counter, cell, dir, path)
+        counter = 1  # Tie-breaker for heap
+
+        g_score: Dict[Tuple[Tuple[int, int], Optional[str]], float] = {
+            (start_cell, None): 0
+        }
+        visited: Set[Tuple[Tuple[int, int], Optional[str]]] = set()
+
+        result_path = None
+
+        while open_set:
+            f, _, current, last_dir, path = heappop(open_set)
+
+            state = (current, last_dir)
+            if state in visited:
+                continue
+            visited.add(state)
+
+            if current == end_cell:
+                result_path = path
+                break
+
+            for neighbor in self._neighbors(current):
+                # Determine direction of this move
+                if neighbor[0] != current[0]:
+                    new_dir = 'h'  # horizontal
+                else:
+                    new_dir = 'v'  # vertical
+
+                # Calculate cost
+                nx, ny = self._to_world(*neighbor)
+                cx, cy = self._to_world(*current)
+                move_cost = abs(nx - cx) + abs(ny - cy)
+
+                # Add bend penalty if direction changed
+                if last_dir is not None and new_dir != last_dir:
+                    move_cost += self.bend_penalty
+
+                tentative_g = g_score.get((current, last_dir), float('inf')) + move_cost
+                new_state = (neighbor, new_dir)
+
+                if tentative_g < g_score.get(new_state, float('inf')):
+                    g_score[new_state] = tentative_g
+                    f_score = tentative_g + self._heuristic(neighbor, end_cell)
+                    heappush(open_set, (f_score, counter, neighbor, new_dir, path + [neighbor]))
+                    counter += 1
+
+        # Restore obstacle state
+        if start_in_obstacle:
+            self.obstacles.add(start_cell)
+        if end_in_obstacle:
+            self.obstacles.add(end_cell)
+
+        if result_path:
+            # Convert path to world coordinates and simplify
+            world_path = [self._to_world(*cell) for cell in result_path]
+            return self._simplify_path(world_path)
+        else:
+            # No path found - return direct line (fallback)
+            return [start, end]
+
+    def _simplify_path(self, path: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+        """Remove redundant waypoints from path (keep only turn points)."""
+        if len(path) <= 2:
+            return path
+
+        simplified = [path[0]]
+        for i in range(1, len(path) - 1):
+            prev = path[i - 1]
+            curr = path[i]
+            next_pt = path[i + 1]
+
+            # Check if direction changes at this point
+            prev_horizontal = (prev[1] == curr[1])
+            next_horizontal = (curr[1] == next_pt[1])
+
+            if prev_horizontal != next_horizontal:
+                simplified.append(curr)
+
+        simplified.append(path[-1])
+        return simplified
+
+
 @dataclass
 class LayoutConfig:
     """Configuration for layout algorithms."""
@@ -203,11 +418,20 @@ class DiagramStyle:
         roughness: Sloppiness level (0=architect/clean, 1=artist/normal, 2=cartoonist/rough)
         stroke_style: Line style ("solid", "dashed", "dotted")
         color_scheme: Named color scheme ("default", "monochrome", "corporate", "vibrant")
+        font: Font family ("hand", "normal", "code", "nunito", "excalifont", or "auto")
+              When "auto", uses "nunito" for roughness=0, "hand" otherwise
     """
     roughness: int = 1              # 0=clean lines, 1=normal hand-drawn, 2=rough sketch
     stroke_style: str = "solid"     # solid, dashed, dotted
     stroke_width: int = 2           # Line thickness (1-4)
     color_scheme: str = "default"   # Color scheme name
+    font: str = "auto"              # Font family or "auto" for roughness-based selection
+
+    def get_font(self) -> str:
+        """Get the effective font family based on settings."""
+        if self.font == "auto":
+            return "nunito" if self.roughness == 0 else "hand"
+        return self.font
 
 
 # Predefined color schemes
@@ -691,6 +915,10 @@ class Diagram:
         self.routing = routing_config or RoutingConfig()
         self.style = diagram_style or DiagramStyle()
 
+        # Sync box_style font with diagram style if using auto
+        if self.box_style.font_family == "hand":  # Default value
+            self.box_style.font_family = self.style.get_font()
+
     def add(self, *elements: Union[dict, List[dict]]) -> None:
         """Add raw elements to the diagram."""
         for elem in elements:
@@ -759,7 +987,8 @@ class Diagram:
 
         # Add centered text as a single element (supports multi-line with \n)
         lines = label.split("\n")
-        metrics = FONT_METRICS.get(self.box_style.font_family, FONT_METRICS["hand"])
+        font_family = self.box_style.font_family
+        metrics = FONT_METRICS.get(font_family, FONT_METRICS["hand"])
         line_height = font_size * metrics["line_height"]
         total_text_height = len(lines) * line_height
 
@@ -772,6 +1001,7 @@ class Diagram:
             text_y,
             label,  # Full label with \n characters preserved
             font_size=font_size,
+            font_family=font_family,
             color="black",
             align="center"
         )
@@ -790,9 +1020,11 @@ class Diagram:
         content: str,
         font_size: int = 20,
         color: str = "black",
+        font_family: str = None,
     ) -> Element:
         """Create a standalone text element."""
-        elem = text(x, y, content, font_size=font_size, color=color)
+        ff = font_family or self.box_style.font_family
+        elem = text(x, y, content, font_size=font_size, font_family=ff, color=color)
         self.elements.append(elem)
         return Element(elem, x, y, elem["width"], elem["height"])
 
@@ -1014,8 +1246,145 @@ class Diagram:
                 label_y -= self.routing.label_offset_h  # Horizontal segment - label above
             else:
                 label_x += self.routing.label_offset_v  # Vertical segment - label to right
-            label_elem = text(label_x, label_y, label, font_size=self.routing.label_font_size, color="black")
+            label_elem = text(label_x, label_y, label, font_size=self.routing.label_font_size,
+                            font_family=self.box_style.font_family, color="black")
             self.elements.append(label_elem)
+
+    def arrow_between_routed(
+        self,
+        source: Element,
+        target: Element,
+        label: Optional[str] = None,
+        color: str = "black",
+        obstacles: Optional[List[Element]] = None,
+    ) -> None:
+        """Draw an arrow between two elements using A* pathfinding.
+
+        Routes the arrow around obstacles (other shapes) to avoid crossings.
+        Best for architecture diagrams and non-hierarchical layouts.
+
+        Args:
+            source: Starting element
+            target: Ending element
+            label: Optional text label (bound to arrow)
+            color: Arrow color
+            obstacles: List of elements to route around. If None, uses all
+                      shape elements currently in the diagram.
+        """
+        # Collect obstacles - all shape elements except arrows
+        if obstacles is None:
+            obstacles = [
+                Element(data=e, x=e["x"], y=e["y"],
+                       width=e["width"], height=e["height"])
+                for e in self.elements
+                if e.get("type") in ("rectangle", "ellipse", "diamond")
+            ]
+
+        if not obstacles:
+            # No obstacles - fall back to regular arrow
+            self.arrow_between(source, target, label=label, color=color)
+            return
+
+        # Build router
+        router = GridRouter(shapes=obstacles, margin=20, bend_penalty=80)
+
+        # Get connection points based on relative positions
+        dx = target.center_x - source.center_x
+        dy = target.center_y - source.center_y
+
+        # Determine best connection points
+        if abs(dx) > abs(dy):
+            # Horizontal: exit/enter from sides
+            start_pt = (source.right if dx > 0 else source.left, source.center_y)
+            end_pt = (target.left if dx > 0 else target.right, target.center_y)
+        else:
+            # Vertical: exit/enter from top/bottom
+            start_pt = (source.center_x, source.bottom if dy > 0 else source.top)
+            end_pt = (target.center_x, target.top if dy > 0 else target.bottom)
+
+        # Find optimal route
+        waypoints = router.find_route(start_pt, end_pt)
+
+        # Draw the routed arrow with bound label
+        self._draw_routed_arrow_bound(waypoints, label=label, color=color)
+
+    def _draw_routed_arrow_bound(
+        self,
+        waypoints: List[Tuple[float, float]],
+        label: Optional[str] = None,
+        color: str = "black",
+    ) -> None:
+        """Draw an arrow following waypoints with label bound to arrow."""
+        if len(waypoints) < 2:
+            return
+
+        sx, sy = waypoints[0]
+        ex, ey = waypoints[-1]
+
+        # Convert waypoints to relative points
+        points = [[0, 0]]
+        for wx, wy in waypoints[1:]:
+            points.append([wx - sx, wy - sy])
+
+        stroke = COLORS.get(color, "#1e1e1e")
+        arrow_id = _gen_id()
+        elem = _base_element(
+            "arrow", sx, sy,
+            abs(ex - sx) or 1, abs(ey - sy) or 1,
+            stroke_color=stroke,
+            bg_color="transparent",
+            roughness=self.style.roughness,
+            stroke_style=self.style.stroke_style,
+            stroke_width=self.style.stroke_width,
+        )
+        elem["id"] = arrow_id
+        elem.update({
+            "points": points,
+            "startBinding": None,
+            "endBinding": None,
+            "startArrowhead": None,
+            "endArrowhead": "arrow",
+            "elbowed": True,
+            "roundness": None,
+        })
+
+        if label:
+            # Find midpoint for label
+            total_length = sum(
+                abs(waypoints[i+1][0] - waypoints[i][0]) + abs(waypoints[i+1][1] - waypoints[i][1])
+                for i in range(len(waypoints) - 1)
+            )
+            mid_length = total_length / 2
+            accumulated = 0
+            label_x, label_y = waypoints[0]
+
+            for i in range(len(waypoints) - 1):
+                p1, p2 = waypoints[i], waypoints[i + 1]
+                seg_length = abs(p2[0] - p1[0]) + abs(p2[1] - p1[1])
+                if accumulated + seg_length >= mid_length:
+                    t = (mid_length - accumulated) / seg_length if seg_length > 0 else 0
+                    label_x = p1[0] + t * (p2[0] - p1[0])
+                    label_y = p1[1] + t * (p2[1] - p1[1])
+                    break
+                accumulated += seg_length
+
+            # Create bound text
+            text_id = _gen_id()
+            label_elem = text(
+                label_x, label_y - 10, label,
+                font_size=self.routing.label_font_size,
+                font_family=self.box_style.font_family,
+                color="black"
+            )
+            label_elem["id"] = text_id
+            label_elem["containerId"] = arrow_id
+            label_elem["textAlign"] = "center"
+            elem["boundElements"] = [{"type": "text", "id": text_id}]
+
+            self.elements.append(elem)
+            self.elements.append(label_elem)
+        else:
+            self.elements.append(elem)
 
     def line_between(
         self,
@@ -1253,11 +1622,24 @@ class Flowchart(Diagram):
 # ============================================================================
 
 class ArchitectureDiagram(Diagram):
-    """Specialized diagram for system architecture."""
+    """Specialized diagram for system architecture.
 
-    def __init__(self, architecture_style: ArchitectureStyle = None, **kwargs):
+    Args:
+        architecture_style: Style configuration for components
+        use_astar_routing: If True, use A* pathfinding to route connections
+                          around components (avoids crossings). Default: True
+        **kwargs: Additional arguments passed to Diagram base class
+    """
+
+    def __init__(
+        self,
+        architecture_style: ArchitectureStyle = None,
+        use_astar_routing: bool = True,
+        **kwargs
+    ):
         super().__init__(**kwargs)
         self.arch_style = architecture_style or ArchitectureStyle()
+        self.use_astar_routing = use_astar_routing
         self._components: dict[str, Element] = {}
 
     def component(
@@ -1326,13 +1708,24 @@ class ArchitectureDiagram(Diagram):
         bidirectional: bool = False,
         color: str = "black",
     ) -> None:
-        """Connect two components."""
+        """Connect two components.
+
+        If use_astar_routing is enabled (default), routes around other components.
+        """
         source = self._components.get(from_id)
         target = self._components.get(to_id)
         if source and target:
-            self.arrow_between(source, target, label=label, color=color)
-            if bidirectional:
-                self.arrow_between(target, source, color=color)
+            # Get list of obstacles (all components except source and target)
+            obstacles = [c for c in self._components.values() if c not in (source, target)]
+
+            if self.use_astar_routing and obstacles:
+                self.arrow_between_routed(source, target, label=label, color=color, obstacles=obstacles)
+                if bidirectional:
+                    self.arrow_between_routed(target, source, color=color, obstacles=obstacles)
+            else:
+                self.arrow_between(source, target, label=label, color=color)
+                if bidirectional:
+                    self.arrow_between(target, source, color=color)
 
 
 # ============================================================================
@@ -1444,6 +1837,7 @@ class AutoLayoutFlowchart(Diagram):
         two_column: bool = False,
         target_aspect_ratio: float = 0.8,
         column_gap: float = 120,
+        use_astar_routing: bool = False,
     ) -> dict:
         """
         Compute positions for all nodes using hierarchical layout,
@@ -1457,6 +1851,7 @@ class AutoLayoutFlowchart(Diagram):
             two_column: If True, automatically split tall diagrams into two columns
             target_aspect_ratio: Target aspect ratio when splitting (default 0.8)
             column_gap: Gap between columns when splitting
+            use_astar_routing: If True, use A* pathfinding for edge routing (experimental)
 
         Returns:
             Dict with layout metadata: width, height, aspect_ratio, layers, scale_factor, split
@@ -1557,6 +1952,57 @@ class AutoLayoutFlowchart(Diagram):
         diagram_right = max(e.right for e in all_elements) if all_elements else 500
         diagram_left = min(e.left for e in all_elements) if all_elements else 0
 
+        # Create A* router if enabled
+        router = None
+        if use_astar_routing and all_elements:
+            router = GridRouter(shapes=all_elements, margin=20, bend_penalty=80)
+
+        # Pre-compute exit sides for decision branches to ensure opposite sides
+        # Group decision edges by source node
+        decision_edges: dict[str, list] = {}
+        for edge in self._edges:
+            source_info = self._nodes.get(edge["from"], {})
+            node_type = source_info.get("node_type", "process")
+            is_decision = node_type == "decision" or source_info.get("shape") == "diamond"
+            has_label = edge.get("label") is not None
+            if is_decision and has_label:
+                src = edge["from"]
+                if src not in decision_edges:
+                    decision_edges[src] = []
+                decision_edges[src].append(edge)
+
+        # Assign exit sides for each decision node's branches
+        decision_exit_sides: dict[tuple[str, str], str] = {}  # (from, to) -> "left" or "right"
+        for src, edges in decision_edges.items():
+            if len(edges) == 2:
+                # Two branches - force opposite sides
+                e1, e2 = edges
+                source = self._elements_map.get(src)
+                t1 = self._elements_map.get(e1["to"])
+                t2 = self._elements_map.get(e2["to"])
+                if source and t1 and t2:
+                    # Check if either branch is a back-edge (target above or at same level as source)
+                    e1_is_back = t1.center_y <= source.center_y
+                    e2_is_back = t2.center_y <= source.center_y
+
+                    if e1_is_back and not e2_is_back:
+                        # e1 is back-edge -> exits LEFT (conventional loop side)
+                        decision_exit_sides[(e1["from"], e1["to"])] = "left"
+                        decision_exit_sides[(e2["from"], e2["to"])] = "right"
+                    elif e2_is_back and not e1_is_back:
+                        # e2 is back-edge -> exits LEFT
+                        decision_exit_sides[(e1["from"], e1["to"])] = "right"
+                        decision_exit_sides[(e2["from"], e2["to"])] = "left"
+                    else:
+                        # Neither or both are back-edges - use x-position comparison
+                        if t1.center_x < t2.center_x:
+                            decision_exit_sides[(e1["from"], e1["to"])] = "left"
+                            decision_exit_sides[(e2["from"], e2["to"])] = "right"
+                        else:
+                            decision_exit_sides[(e1["from"], e1["to"])] = "right"
+                            decision_exit_sides[(e2["from"], e2["to"])] = "left"
+            # For 1 or 3+ branches, let _draw_decision_branch decide
+
         # Create arrows with specified routing
         for edge in self._edges:
             source = self._elements_map.get(edge["from"])
@@ -1573,14 +2019,35 @@ class AutoLayoutFlowchart(Diagram):
                 has_label = edge.get("label") is not None
                 is_back_edge = target.center_y <= source.center_y
 
-                if is_decision and has_label:
+                # Use A* routing if enabled
+                if router is not None:
+                    # For decision branches, use pre-computed exit side
+                    forced_exit_side = None
+                    if is_decision and has_label:
+                        forced_exit_side = decision_exit_sides.get((edge["from"], edge["to"]))
+
+                    # Get connection points
+                    start_pt = self._get_connection_point(source, target, "exit", forced_exit_side)
+                    end_pt = self._get_connection_point(target, source, "entry")
+                    # Find optimal route
+                    waypoints = router.find_route(start_pt, end_pt)
+                    # Draw the routed arrow
+                    self._draw_routed_arrow(
+                        waypoints,
+                        label=edge.get("label"),
+                        color=edge.get("color", "black"),
+                    )
+                elif is_decision and has_label:
                     # Decision branch: start from left/right side of diamond
+                    # Use pre-computed exit side if available
+                    exit_side = decision_exit_sides.get((edge["from"], edge["to"]))
                     self._draw_decision_branch(
                         source, target,
                         label=edge.get("label"),
                         color=edge.get("color", "black"),
                         diagram_right=diagram_right,
                         diagram_left=diagram_left,
+                        exit_side=exit_side,
                     )
                 elif is_back_edge:
                     # Back-edge: route through whitespace
@@ -1589,6 +2056,7 @@ class AutoLayoutFlowchart(Diagram):
                         label=edge.get("label"),
                         color=edge.get("color", "black"),
                         diagram_right=diagram_right,
+                        diagram_left=diagram_left,
                     )
                 else:
                     # Normal forward edge
@@ -1690,8 +2158,168 @@ class AutoLayoutFlowchart(Diagram):
         if label:
             label_x = gap_x + self.flowchart_style.column_connector_label_offset
             label_y = sy + (ey - sy) / 2
-            label_elem = text(label_x, label_y, label, font_size=self.routing.label_font_size, color="black")
+            label_elem = text(label_x, label_y, label, font_size=self.routing.label_font_size,
+                            font_family=self.box_style.font_family, color="black")
             self.elements.append(label_elem)
+
+    def _get_connection_point(
+        self,
+        shape: "Element",
+        other: "Element",
+        mode: str = "auto",
+        forced_side: Optional[str] = None,
+    ) -> Tuple[float, float]:
+        """Determine where to connect to/from a shape.
+
+        Args:
+            shape: The shape to connect to/from
+            other: The other shape in the connection
+            mode: "exit" (leaving shape), "entry" (entering shape), or "auto"
+            forced_side: If provided ("left" or "right"), force exit from this side
+
+        Returns:
+            (x, y) connection point on the shape's edge
+        """
+        dx = other.center_x - shape.center_x
+        dy = other.center_y - shape.center_y
+
+        # Check element type from the data dict
+        element_type = shape.data.get("type", "rectangle")
+
+        # For diamonds (decision nodes):
+        # - EXIT: prefer left/right sides (flowchart convention for Yes/No branches)
+        # - ENTRY: prefer top (coming from above) or use side if horizontal
+        if element_type == "diamond":
+            if mode == "exit":
+                # Use forced side if provided (ensures opposite sides for decision branches)
+                if forced_side == "left":
+                    return (shape.left, shape.center_y)
+                elif forced_side == "right":
+                    return (shape.right, shape.center_y)
+                # Default: choose side based on target's horizontal position
+                return (shape.right if dx >= 0 else shape.left, shape.center_y)
+            elif mode == "entry":
+                # Entering a diamond - prefer top if coming from above, else side
+                if dy < 0:  # other is above, enter from top
+                    return (shape.center_x, shape.top)
+                elif abs(dx) > abs(dy):
+                    return (shape.right if dx > 0 else shape.left, shape.center_y)
+                else:
+                    return (shape.center_x, shape.bottom if dy > 0 else shape.top)
+            else:  # auto
+                if abs(dx) > abs(dy):
+                    return (shape.right if dx > 0 else shape.left, shape.center_y)
+                else:
+                    return (shape.center_x, shape.bottom if dy > 0 else shape.top)
+
+        # For rectangles/ellipses
+        # Special case for back-edges (entering from below): prefer side entry
+        if mode == "entry" and dy > 0:
+            # Source (other) is below target (shape) - this is a back-edge
+            # Enter from the side (left or right based on source position)
+            return (shape.right if dx > 0 else shape.left, shape.center_y)
+
+        # Normal case: connect to the side closest to other shape
+        if abs(dx) > abs(dy):
+            # Horizontal connection
+            return (shape.right if dx > 0 else shape.left, shape.center_y)
+        else:
+            # Vertical connection
+            return (shape.center_x, shape.bottom if dy > 0 else shape.top)
+
+    def _draw_routed_arrow(
+        self,
+        waypoints: List[Tuple[float, float]],
+        label: Optional[str] = None,
+        color: str = "black",
+    ) -> None:
+        """Draw an arrow following a series of waypoints.
+
+        Creates an orthogonal arrow with elbow turns at each waypoint.
+        Labels are bound to the arrow (not separate text boxes).
+
+        Args:
+            waypoints: List of (x, y) points the arrow passes through
+            label: Optional text label for the arrow
+            color: Arrow color
+        """
+        if len(waypoints) < 2:
+            return
+
+        # Start point
+        sx, sy = waypoints[0]
+        # End point
+        ex, ey = waypoints[-1]
+
+        # Convert waypoints to relative points for Excalidraw
+        points = [[0, 0]]  # Start at origin
+        for wx, wy in waypoints[1:]:
+            points.append([wx - sx, wy - sy])
+
+        stroke = COLORS.get(color, "#1e1e1e")
+        arrow_id = _gen_id()
+        elem = _base_element(
+            "arrow", sx, sy,
+            abs(ex - sx) or 1, abs(ey - sy) or 1,
+            stroke_color=stroke,
+            bg_color="transparent",
+            roughness=self.style.roughness,
+            stroke_style=self.style.stroke_style,
+            stroke_width=self.style.stroke_width,
+        )
+        elem["id"] = arrow_id
+        elem.update({
+            "points": points,
+            "startBinding": None,
+            "endBinding": None,
+            "startArrowhead": None,
+            "endArrowhead": "arrow",
+            "elbowed": True,
+            "roundness": None,
+        })
+
+        # Add bound label if provided
+        if label:
+            # Find midpoint along the path for label positioning
+            total_length = 0
+            for i in range(len(waypoints) - 1):
+                p1, p2 = waypoints[i], waypoints[i + 1]
+                total_length += abs(p2[0] - p1[0]) + abs(p2[1] - p1[1])
+
+            mid_length = total_length / 2
+            accumulated = 0
+            label_x, label_y = waypoints[0]
+
+            for i in range(len(waypoints) - 1):
+                p1, p2 = waypoints[i], waypoints[i + 1]
+                seg_length = abs(p2[0] - p1[0]) + abs(p2[1] - p1[1])
+                if accumulated + seg_length >= mid_length:
+                    # Label goes on this segment
+                    t = (mid_length - accumulated) / seg_length if seg_length > 0 else 0
+                    label_x = p1[0] + t * (p2[0] - p1[0])
+                    label_y = p1[1] + t * (p2[1] - p1[1])
+                    break
+                accumulated += seg_length
+
+            # Create bound text element
+            text_id = _gen_id()
+            label_elem = text(
+                label_x, label_y - 10, label,
+                font_size=self.routing.label_font_size,
+                font_family=self.box_style.font_family,
+                color="black"
+            )
+            label_elem["id"] = text_id
+            label_elem["containerId"] = arrow_id
+            label_elem["textAlign"] = "center"
+
+            # Bind text to arrow
+            elem["boundElements"] = [{"type": "text", "id": text_id}]
+
+            self.elements.append(elem)
+            self.elements.append(label_elem)
+        else:
+            self.elements.append(elem)
 
     def _draw_decision_branch(
         self,
@@ -1701,15 +2329,29 @@ class AutoLayoutFlowchart(Diagram):
         color: str,
         diagram_right: float,
         diagram_left: float,
+        exit_side: Optional[str] = None,
     ) -> None:
         """Draw an arrow from a decision diamond's left or right point.
 
         The arrow starts horizontally from the diamond's side, then elbows
-        to reach the target. The first elbow is at the same y-level as the start.
+        to reach the target. Ensures arrow never crosses through the source box.
+
+        Args:
+            exit_side: If provided ("left" or "right"), forces which side to exit from.
+                       This is used when multiple branches need to exit opposite sides.
         """
-        # Determine which side to exit from based on target position
-        target_is_left = target.center_x < source.center_x
+        # Determine which side to exit from
         target_is_below = target.center_y > source.center_y
+
+        if exit_side is not None:
+            # Use pre-computed exit side (ensures opposite sides for 2-branch decisions)
+            target_is_left = (exit_side == "left")
+        elif target_is_below:
+            # Target is below - use RIGHT unless target is far left
+            target_is_left = target.center_x < source.center_x - 80
+        else:
+            # Target at same level or above - exit toward target
+            target_is_left = target.center_x < source.center_x
 
         if target_is_left:
             # Exit from left side of diamond
@@ -1726,32 +2368,69 @@ class AutoLayoutFlowchart(Diagram):
             ex = target.center_x
             ey = target.top
         else:
-            # Target is at same level or above - connect to left or right
+            # Target is at same level or above (back-edge)
+            # Enter from the SAME side we're routing on
             if target_is_left:
-                ex = target.right
+                # Routing on left side -> enter from left
+                ex = target.left
                 ey = target.center_y
             else:
-                ex = target.left
+                # Routing on right side -> enter from right
+                ex = target.right
                 ey = target.center_y
 
         # Build path with elbow at start level
         if target_is_below:
-            # Path: horizontal at start level, then down, then horizontal to target, then down
-            mid_x = ex  # Go to target's x first
-            points = [
-                [0, 0],                    # Start at diamond side
-                [mid_x - sx, 0],           # Horizontal to above/below target
-                [mid_x - sx, ey - sy],     # Down to target top
-            ]
+            # Check if going directly to target.center_x would cross the source box
+            # This happens when we exit right but target is to the left (or vice versa)
+            would_cross_source = (not target_is_left and ex < sx) or (target_is_left and ex > sx)
+
+            if would_cross_source:
+                # Route around: go out in exit direction first, then across above target, then down
+                horizontal_extent = self.flowchart_style.decision_branch_extent
+                if target_is_left:
+                    mid_x = sx - horizontal_extent  # Go left first
+                else:
+                    mid_x = sx + horizontal_extent  # Go right first
+                # Add clearance above target for vertical entry
+                clearance = 20
+                points = [
+                    [0, 0],                            # Start at diamond side
+                    [mid_x - sx, 0],                   # Horizontal away from diamond
+                    [mid_x - sx, ey - sy - clearance], # Down to above target
+                    [ex - sx, ey - sy - clearance],    # Horizontal to above target center
+                    [ex - sx, ey - sy],                # Down vertically into target top
+                ]
+            else:
+                # Direct path: horizontal to above target, then down
+                points = [
+                    [0, 0],                    # Start at diamond side
+                    [ex - sx, 0],              # Horizontal to above target
+                    [ex - sx, ey - sy],        # Down to target top
+                ]
         else:
-            # Path: horizontal, then vertical to target level, then horizontal to target
-            # First segment horizontal at diamond level
-            horizontal_extent = self.flowchart_style.decision_branch_extent
-            mid_x = sx + (-horizontal_extent if target_is_left else horizontal_extent)
+            # Back-edge: route through whitespace on left or right side
+            # Calculate routing margin similar to _draw_back_edge
+            fc_style = self.flowchart_style
+            base_margin = fc_style.back_edge_margin
+            vertical_span = abs(target.center_y - sy)
+            span_offset = vertical_span * fc_style.back_edge_span_multiplier
+
+            if target_is_left:
+                # Route through whitespace on the LEFT
+                route_x = min(diagram_left - base_margin - span_offset,
+                              sx - base_margin,
+                              target.left - base_margin)
+            else:
+                # Route through whitespace on the RIGHT
+                route_x = max(diagram_right + base_margin + span_offset,
+                              sx + base_margin,
+                              target.right + base_margin)
+
             points = [
                 [0, 0],                    # Start at diamond side
-                [mid_x - sx, 0],           # Short horizontal segment
-                [mid_x - sx, ey - sy],     # Vertical to target level
+                [route_x - sx, 0],         # Horizontal to routing margin
+                [route_x - sx, ey - sy],   # Vertical to target level
                 [ex - sx, ey - sy],        # Horizontal to target
             ]
 
@@ -1779,13 +2458,25 @@ class AutoLayoutFlowchart(Diagram):
         })
         self.elements.append(elem)
 
-        # Add label near the start of the arrow (horizontal segment)
+        # Add label on the horizontal segment
         if label:
             fc_style = self.flowchart_style
-            label_offset = fc_style.decision_label_offset_left if target_is_left else fc_style.decision_label_offset_right
-            label_x = sx + label_offset
-            label_y = sy + fc_style.decision_label_offset_y
-            label_elem = text(label_x, label_y, label, font_size=self.routing.label_font_size, color="black")
+            if target_is_below:
+                # Place label along the horizontal segment, away from center to avoid overlap
+                if target_is_left:
+                    # Left branch going down - place label to the left
+                    label_x = sx - 60 - len(label) * 5
+                else:
+                    # Right branch going down - place label to the right
+                    label_x = sx + 20
+                label_y = sy + fc_style.decision_label_offset_y
+            else:
+                # Horizontal branch - place label at start
+                label_offset = fc_style.decision_label_offset_left if target_is_left else fc_style.decision_label_offset_right
+                label_x = sx + label_offset
+                label_y = sy + fc_style.decision_label_offset_y
+            label_elem = text(label_x, label_y, label, font_size=self.routing.label_font_size,
+                            font_family=self.box_style.font_family, color="black")
             self.elements.append(label_elem)
 
     def _draw_back_edge(
@@ -1795,45 +2486,100 @@ class AutoLayoutFlowchart(Diagram):
         label: Optional[str],
         color: str,
         diagram_right: float,
+        diagram_left: float = 0,
     ) -> None:
-        """Draw a back-edge that routes through whitespace on the right side.
+        """Draw a back-edge that routes through whitespace.
 
-        For edges going to a previous (higher) node in the flow, route:
-        right from source -> down/up in whitespace -> left to target's right edge
+        For edges going to a previous (higher) node in the flow, route through
+        whitespace on the appropriate side based on target position:
+        - If target is to the LEFT: route on left side, enter from left
+        - If target is to the RIGHT or centered: route on right side, enter from top/right
 
-        Longer back-edges route further out to avoid overlapping shorter ones.
+        Entry point depends on vertical distance:
+        - Significant vertical span: enter from top of target (cleaner U-turn)
+        - Small vertical span: enter from side of target
         """
-        # Start from right side of source
-        sx = source.right
-        sy = source.center_y
+        # Determine routing side based on source position relative to diagram center
+        # Route on the same side as the source to minimize crossings
+        diagram_center = (diagram_left + diagram_right) / 2
+        source_is_on_right = source.center_x > diagram_center
 
-        # End at right side of target
-        ex = target.right
-        ey = target.center_y
+        if source_is_on_right:
+            # Source is on right side of diagram - route on RIGHT to avoid crossing
+            sx = source.right
+            sy = source.center_y
+            route_on_left = False
+        else:
+            # Source is on left/center of diagram - route on LEFT (conventional)
+            sx = source.left
+            sy = source.center_y
+            route_on_left = True
 
         # Calculate vertical span of this back-edge
-        vertical_span = abs(ey - sy)
+        vertical_span = abs(target.center_y - sy)
 
         # Base margin from diagram edge
         fc_style = self.flowchart_style
         base_margin = fc_style.back_edge_margin
 
         # Additional offset based on vertical span - longer edges route further out
-        # This separates overlapping back-edges
         span_offset = vertical_span * fc_style.back_edge_span_multiplier
 
-        # Route through whitespace on the right, with offset based on span
-        route_x = max(diagram_right + base_margin + span_offset,
-                      sx + base_margin,
-                      ex + base_margin)
+        # Decide entry point: top entry for significant upward movement
+        enter_from_top = vertical_span > 100 and target.center_y < sy
 
-        # Build path: right to whitespace, up/down to target level, left to target
-        points = [
-            [0, 0],                        # Start at source right
-            [route_x - sx, 0],             # Horizontal to whitespace
-            [route_x - sx, ey - sy],       # Vertical to target level
-            [ex - sx, ey - sy],            # Horizontal to target right edge
-        ]
+        if route_on_left:
+            # Route through whitespace on the LEFT
+            route_x = min(diagram_left - base_margin - span_offset,
+                          sx - base_margin,
+                          target.left - base_margin)
+
+            if enter_from_top:
+                ex = target.center_x
+                ey = target.top
+                clearance = 20
+                points = [
+                    [0, 0],
+                    [route_x - sx, 0],
+                    [route_x - sx, ey - sy - clearance],
+                    [ex - sx, ey - sy - clearance],
+                    [ex - sx, ey - sy],
+                ]
+            else:
+                ex = target.left
+                ey = target.center_y
+                points = [
+                    [0, 0],
+                    [route_x - sx, 0],
+                    [route_x - sx, ey - sy],
+                    [ex - sx, ey - sy],
+                ]
+        else:
+            # Route through whitespace on the RIGHT
+            route_x = max(diagram_right + base_margin + span_offset,
+                          sx + base_margin,
+                          target.right + base_margin)
+
+            if enter_from_top:
+                ex = target.center_x
+                ey = target.top
+                clearance = 20
+                points = [
+                    [0, 0],
+                    [route_x - sx, 0],
+                    [route_x - sx, ey - sy - clearance],
+                    [ex - sx, ey - sy - clearance],
+                    [ex - sx, ey - sy],
+                ]
+            else:
+                ex = target.right
+                ey = target.center_y
+                points = [
+                    [0, 0],
+                    [route_x - sx, 0],
+                    [route_x - sx, ey - sy],
+                    [ex - sx, ey - sy],
+                ]
 
         stroke = COLORS.get(color, "#1e1e1e")
         elem = _base_element(
@@ -1861,9 +2607,15 @@ class AutoLayoutFlowchart(Diagram):
 
         # Add label on the vertical segment in whitespace
         if label:
-            label_x = route_x + fc_style.back_edge_label_offset
+            if route_on_left:
+                # Label to the left of the route line
+                label_x = route_x - fc_style.back_edge_label_offset - len(label) * 6
+            else:
+                # Label to the right of the route line
+                label_x = route_x + fc_style.back_edge_label_offset
             label_y = sy + (ey - sy) / 2
-            label_elem = text(label_x, label_y, label, font_size=self.routing.label_font_size, color="black")
+            label_elem = text(label_x, label_y, label, font_size=self.routing.label_font_size,
+                            font_family=self.box_style.font_family, color="black")
             self.elements.append(label_elem)
 
 
