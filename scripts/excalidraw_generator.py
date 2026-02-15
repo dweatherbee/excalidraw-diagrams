@@ -982,9 +982,6 @@ class Diagram:
             stroke_width=self.style.stroke_width,
         )
 
-        # Add shape first (background)
-        self.elements.append(shape_elem)
-
         # Add centered text as a single element (supports multi-line with \n)
         lines = label.split("\n")
         font_family = self.box_style.font_family
@@ -1008,7 +1005,17 @@ class Diagram:
         # Set text width to match box, so center alignment works correctly
         text_elem["width"] = width
         text_elem["textAlign"] = "center"
-        text_elem["verticalAlign"] = "top"
+
+        # Embed text inside shape (Excalidraw containerId/boundElements binding)
+        text_id = text_elem["id"]
+        shape_id = shape_elem["id"]
+        text_elem["containerId"] = shape_id
+        text_elem["verticalAlign"] = "middle"
+        if shape_elem["boundElements"] is None:
+            shape_elem["boundElements"] = []
+        shape_elem["boundElements"].append({"type": "text", "id": text_id})
+
+        self.elements.append(shape_elem)
         self.elements.append(text_elem)
 
         return Element(shape_elem, x, y, width, height)
@@ -1091,7 +1098,7 @@ class Diagram:
         if use_orthogonal:
             # Build path with perpendicular entry/exit
             points = self._build_orthogonal_path(sx, sy, ex, ey, from_side, to_side)
-            self._draw_elbowed_arrow(sx, sy, points, color, label)
+            arrow_elem = self._draw_elbowed_arrow(sx, sy, points, color, label)
         else:
             # Straight line or nearly aligned
             elems = arrow(
@@ -1101,6 +1108,34 @@ class Diagram:
                 stroke_width=self.style.stroke_width,
             )
             self.elements.extend(elems)
+            arrow_elem = elems[0]  # First element is the arrow
+
+        # Bind arrow endpoints to source and target shapes
+        arrow_id = arrow_elem["id"]
+        source_id = source.data["id"]
+        target_id = target.data["id"]
+
+        arrow_elem["startBinding"] = {
+            "elementId": source_id,
+            "focus": 0,
+            "gap": 1,
+            "fixedPoint": None,
+        }
+        arrow_elem["endBinding"] = {
+            "elementId": target_id,
+            "focus": 0,
+            "gap": 1,
+            "fixedPoint": None,
+        }
+
+        # Add arrow to source and target shapes' boundElements
+        if source.data["boundElements"] is None:
+            source.data["boundElements"] = []
+        source.data["boundElements"].append({"type": "arrow", "id": arrow_id})
+
+        if target.data["boundElements"] is None:
+            target.data["boundElements"] = []
+        target.data["boundElements"].append({"type": "arrow", "id": arrow_id})
 
     def _build_orthogonal_path(
         self,
@@ -1203,8 +1238,8 @@ class Diagram:
         points: List[List[float]],
         color: str,
         label: Optional[str],
-    ) -> None:
-        """Draw an elbowed arrow with the given path points."""
+    ) -> dict:
+        """Draw an elbowed arrow with the given path points. Returns the arrow element."""
         stroke = COLORS.get(color, "#1e1e1e")
 
         # Calculate bounds
@@ -1249,6 +1284,8 @@ class Diagram:
             label_elem = text(label_x, label_y, label, font_size=self.routing.label_font_size,
                             font_family=self.box_style.font_family, color="black")
             self.elements.append(label_elem)
+
+        return elem
 
     def arrow_between_routed(
         self,
